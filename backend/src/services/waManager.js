@@ -46,6 +46,7 @@ class WAManager extends EventEmitter {
       authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
       puppeteer: {
         headless: true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       },
     });
