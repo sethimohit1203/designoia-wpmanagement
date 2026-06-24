@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS sheets_config (
   tab_name TEXT DEFAULT 'Sheet1',
   number_id INTEGER,
   column_map TEXT DEFAULT '{}',            -- detected header->column index map, set on first sync
+  target_type TEXT,                        -- contact | group | channel — where Schedule-Date auto-sends go
+  target_id TEXT,                          -- contact id, or WA group/channel wa_id
   last_synced_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -139,6 +141,10 @@ const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().ma
 if (!sheetsConfigCols.includes('column_map')) {
   db.exec("ALTER TABLE sheets_config ADD COLUMN column_map TEXT DEFAULT '{}'");
 }
+if (!sheetsConfigCols.includes('target_type')) {
+  db.exec('ALTER TABLE sheets_config ADD COLUMN target_type TEXT');
+  db.exec('ALTER TABLE sheets_config ADD COLUMN target_id TEXT');
+}
 
 const defaultSettings = {
   business_name: 'My Business',
@@ -152,6 +158,10 @@ const defaultSettings = {
   auto_reply: 'true',
   auto_rotate: 'true',
   rotation_strategy: 'round_robin',
+  broadcast_dm_numbers: '',         // e.g. "8800245974 / 8860103557"
+  broadcast_whatsapp_channel: '',   // e.g. "https://whatsapp.com/channel/..."
+  broadcast_telegram_channel: '',   // e.g. "https://t.me/yourchannel"
+  broadcast_footer_note: '🚚 Free Delivery Across India\n💳 Cash on Delivery Available\n🔄 Easy Returns',
 };
 
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');

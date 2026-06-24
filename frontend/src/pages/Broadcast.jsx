@@ -49,11 +49,11 @@ export default function Broadcast() {
           {products.map((p) => (
             <div
               key={p.id}
-              className={`card cursor-pointer ${selectedProduct?.id === p.id ? 'ring-2 ring-accent' : ''}`}
-              onClick={() => { setSelectedProduct(p); setCaption(''); }}
+              className={`card cursor-pointer ${batchIds.includes(p.id) ? 'ring-2 ring-accent' : ''}`}
+              onClick={() => { toggleBatch(p.id); setSelectedProduct(p); setCaption(''); }}
             >
               <label className="flex justify-between items-start" onClick={(e) => e.stopPropagation()}>
-                <input type="checkbox" checked={batchIds.includes(p.id)} onChange={() => toggleBatch(p.id)} />
+                <input type="checkbox" checked={batchIds.includes(p.id)} onChange={() => { toggleBatch(p.id); setSelectedProduct(p); setCaption(''); }} />
                 <span className="chip bg-gray-100 text-gray-500 text-[10px]">{p.status}</span>
               </label>
               {p.image_url && <img src={p.image_url} className="rounded-lg h-28 w-full object-cover my-2" />}

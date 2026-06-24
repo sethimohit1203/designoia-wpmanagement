@@ -90,12 +90,24 @@ async function checkSheetSchedules() {
     const due = db.prepare("SELECT * FROM products WHERE sheet_config_id = ? AND schedule_date = ? AND status = 'Pending'")
       .all(config.id, today);
 
+    if (!due.length) continue;
+    const numberId = config.number_id || wa.list().find((n) => n.runtimeStatus === 'connected')?.id;
+    if (!numberId || !config.target_type || !config.target_id) {
+      console.warn(`Sheet "${config.name}" has ${due.length} product(s) due today but no number/target configured — skipping. Set a target in the Sheets Sync page.`);
+      continue;
+    }
+
+    let to = config.target_id;
+    if (config.target_type === 'contact') {
+      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(config.target_id);
+      to = contact?.phone;
+    }
+    if (!to) continue;
+
     for (const product of due) {
-      const numberId = config.number_id || wa.list().find((n) => n.runtimeStatus === 'connected')?.id;
-      if (!numberId) continue;
       const body = formatProductMessage(product);
       try {
-        await wa.sendMessage(numberId, product.product_url ? product.phone : '', body); // placeholder; real target chosen via UI normally
+        await wa.sendMessage(numberId, to, body);
         db.prepare("UPDATE products SET status = 'Sent' WHERE id = ?").run(product.id);
         await writeStatus(config, product.row_index, 'Sent').catch(() => {});
       } catch (err) {
@@ -106,9 +118,39 @@ async function checkSheetSchedules() {
   }
 }
 
-function formatProductMessage(product) {
-  const discountBadge = product.discount ? `*${product.discount}% OFF*` : '';
-  return `*${product.product_name}*\n${product.brand || ''}\n\nPrice: Rs.${product.price} ${product.mrp ? `~Rs.${product.mrp}~` : ''} ${discountBadge}\n\n${product.description || ''}\n\n${product.product_url ? `Buy Now: ${product.product_url}` : ''}`;
+// Builds the full branded WhatsApp message: title, body (AI-written or a plain
+// fallback built from sheet fields), price line, and a footer pulled from
+// Settings (DM numbers, channel links). Any empty footer field is omitted.
+function formatProductMessage(product, aiBody) {
+  const lines = [];
+  lines.push(`✨ ${product.product_name} ✨`, '');
+
+  const body = aiBody || [product.brand, product.description].filter(Boolean).join(' — ');
+  if (body) lines.push(body, '');
+
+  const priceParts = [`💰 Price: ₹${product.price}`];
+  if (product.mrp) priceParts.push(`~₹${product.mrp}~`);
+  if (product.discount) priceParts.push(`(${product.discount}% off)`);
+  lines.push(priceParts.join(' '), '');
+
+  const footerNote = getSetting('broadcast_footer_note', '');
+  if (footerNote) lines.push(footerNote, '');
+
+  const dmNumbers = getSetting('broadcast_dm_numbers', '');
+  if (dmNumbers) lines.push(`📩 DM us at ${dmNumbers} to order yours today! 🛍️`, '');
+
+  const waChannel = getSetting('broadcast_whatsapp_channel', '');
+  const tgChannel = getSetting('broadcast_telegram_channel', '');
+  if (waChannel || tgChannel) {
+    lines.push('📌 Explore More Products Here:');
+    if (waChannel) lines.push(`👉 WhatsApp Channel: ${waChannel}`);
+    if (tgChannel) lines.push(`👉 Telegram Channel: ${tgChannel}`);
+    lines.push('');
+  }
+
+  if (product.product_url) lines.push(`Buy Now: ${product.product_url}`);
+
+  return lines.join('\n').trim();
 }
 
 function start() {

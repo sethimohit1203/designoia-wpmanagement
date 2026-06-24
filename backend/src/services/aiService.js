@@ -20,12 +20,18 @@ Return ONLY the message text, nothing else.`
 async function generateProductCaption(product) {
   const model = getModel();
   const result = await model.generateContent(
-    `Write a short, compelling WhatsApp caption for this product to send to customers.
+    `Write the BODY of a WhatsApp product listing message — NOT the title, NOT the price, NOT any contact/footer info, just the persuasive middle section.
+
 Product: ${product.product_name}
-Brand: ${product.brand}
-Price: Rs.${product.price} (MRP Rs.${product.mrp}, ${product.discount}% off)
-Description: ${product.description}
-No spam trigger words. End with a clear call to action. Return ONLY the caption text.`
+Brand: ${product.brand || 'N/A'}
+Description: ${product.description || '(none given — infer reasonable details from the product name)'}
+
+Format exactly like this, using real inferred details where the description is sparse:
+1. One short, warm opening line about the product, with 1-2 tasteful emojis.
+2. A blank line.
+3. 4-6 bullet lines, each starting with "✅ " covering things like Fabric/Material, Style, Fit/Sleeve, Occasion, Sizes Available (write "Please DM for size chart" if sizes aren't known) — only include bullets that make sense for this product type.
+
+No spam trigger words (no FREE, no CLICK NOW, no bit.ly links). Do not include the product name as a heading, do not include price, do not include any "buy now" or contact instructions — those are added separately. Return ONLY this body text, nothing else.`
   );
   return result.response.text().trim();
 }

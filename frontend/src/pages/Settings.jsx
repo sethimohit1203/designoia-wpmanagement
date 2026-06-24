@@ -53,6 +53,15 @@ export default function Settings() {
           </div>
         </div>
 
+        <div className="card space-y-3">
+          <h2 className="font-semibold text-sm">Broadcast Message Footer</h2>
+          <p className="text-xs text-gray-500">Appended to every product broadcast message (Sheets, Broadcast tab). Leave blank to omit a line.</p>
+          <input className="input" placeholder="DM numbers e.g. 8800245974 / 8860103557" value={form.broadcast_dm_numbers} onChange={(e) => setForm({ ...form, broadcast_dm_numbers: e.target.value })} />
+          <input className="input" placeholder="WhatsApp Channel link" value={form.broadcast_whatsapp_channel} onChange={(e) => setForm({ ...form, broadcast_whatsapp_channel: e.target.value })} />
+          <input className="input" placeholder="Telegram Channel link" value={form.broadcast_telegram_channel} onChange={(e) => setForm({ ...form, broadcast_telegram_channel: e.target.value })} />
+          <textarea className="input h-20" placeholder="Footer note (delivery/COD/returns info)" value={form.broadcast_footer_note} onChange={(e) => setForm({ ...form, broadcast_footer_note: e.target.value })} />
+        </div>
+
         <div className="card space-y-2">
           <h2 className="font-semibold text-sm">Toggles</h2>
           {[

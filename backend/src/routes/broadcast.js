@@ -9,7 +9,8 @@ router.post('/caption/:productId', async (req, res) => {
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.productId);
   if (!product) return res.status(404).json({ error: 'product not found' });
   try {
-    const caption = await ai.generateProductCaption(product);
+    const aiBody = await ai.generateProductCaption(product);
+    const caption = formatProductMessage(product, aiBody);
     res.json({ caption });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -38,7 +39,7 @@ router.post('/send-now', async (req, res) => {
 });
 
 router.post('/batch-send', async (req, res) => {
-  const { product_ids, number_id, target_type, target_id, delay_seconds = 10 } = req.body;
+  const { product_ids, number_id, target_type, target_id, delay_seconds = 10, use_ai = true } = req.body;
   const results = [];
   for (const pid of product_ids) {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
@@ -48,8 +49,16 @@ router.post('/batch-send', async (req, res) => {
       const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(target_id);
       to = contact?.phone;
     }
+    let aiBody;
+    if (use_ai) {
+      try {
+        aiBody = await ai.generateProductCaption(product);
+      } catch (e) {
+        console.warn(`AI caption failed for product ${pid}, falling back to plain template:`, e.message);
+      }
+    }
     try {
-      await wa.sendMessage(number_id, to, formatProductMessage(product));
+      await wa.sendMessage(number_id, to, formatProductMessage(product, aiBody));
       db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(pid);
       results.push({ pid, ok: true });
     } catch (e) {
