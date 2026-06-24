@@ -23,7 +23,8 @@ router.get('/oauth/callback', async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/sheets?connected=1`);
   } catch (e) {
-    res.status(500).send(`<h3>OAuth error: ${e.message}</h3>`);
+    console.error('[OAuth callback] failed:', e.message, '\n', e.stack);
+    res.status(500).send(`<h3>OAuth error: ${e.message}</h3><pre style="white-space:pre-wrap;font-size:12px;color:#888">${e.stack}</pre>`);
   }
 });
 

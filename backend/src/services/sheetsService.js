@@ -14,14 +14,16 @@ function extractSheetId(url) {
 }
 
 function getOAuthClient() {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set (check backend/.env locally, or your host\'s environment variables in production)');
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error(
+      `GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI not all set ` +
+      `(got: clientId=${clientId ? 'set' : 'MISSING'}, clientSecret=${clientSecret ? 'set' : 'MISSING'}, redirectUri=${redirectUri || 'MISSING'})`
+    );
   }
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+  return new google.auth.OAuth2({ clientId, clientSecret, redirectUri });
 }
 
 function getAuthUrl() {
