@@ -66,35 +66,93 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
+// Normalizes a header cell ("Price (₹)", "Discount %", "Image URL") down to
+// a bare lowercase token so we can match sheets with different wording/symbols.
+function normalizeHeader(h) {
+  return (h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Maps normalized header tokens to our internal field names. First matching
+// header wins, so more specific keys (e.g. "imageurl") should be checked
+// before broader ones (e.g. "image") when building the column map below.
+const FIELD_MATCHERS = [
+  { field: 'product_name', tokens: ['productname', 'product', 'name', 'title'] },
+  { field: 'brand', tokens: ['brand'] },
+  { field: 'price', tokens: ['price', 'priceinr', 'sellingprice'] },
+  { field: 'mrp', tokens: ['mrp', 'mrpinr', 'originalprice'] },
+  { field: 'discount', tokens: ['discount', 'discountpercent', 'discountoff', 'off'] },
+  { field: 'image_url', tokens: ['imageurl', 'image1url', 'imagelink', 'photourl'] },
+  { field: 'description', tokens: ['description', 'details'] },
+  { field: 'product_url', tokens: ['producturl', 'buynow', 'url', 'link'] },
+  { field: 'schedule_date', tokens: ['scheduledate', 'date'] },
+  { field: 'status', tokens: ['status'] },
+];
+
+function buildColumnMap(headerRow) {
+  const map = {}; // field -> column index
+  const usedCols = new Set();
+  for (const { field, tokens } of FIELD_MATCHERS) {
+    for (let col = 0; col < headerRow.length; col++) {
+      if (usedCols.has(col)) continue;
+      const normalized = normalizeHeader(headerRow[col]);
+      if (tokens.some((t) => normalized === t || normalized.includes(t))) {
+        map[field] = col;
+        usedCols.add(col);
+        break;
+      }
+    }
+  }
+  return map;
+}
+
+function colLetter(index) {
+  let n = index + 1;
+  let letter = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
 async function syncSheet(config) {
   const sheets = await getSheetsClient();
-  const range = `${config.tab_name || 'Sheet1'}!A2:J`;
+  const tab = config.tab_name || 'Sheet1';
+  const headerRes = await sheets.spreadsheets.values.get({ spreadsheetId: config.sheet_id, range: `${tab}!1:1` });
+  const headerRow = headerRes.data.values?.[0] || [];
+  const columnMap = buildColumnMap(headerRow);
+
+  if (columnMap.product_name === undefined) {
+    throw new Error(`Could not find a "Product Name" column in row 1 of "${tab}". Found headers: ${headerRow.join(', ') || '(empty)'}`);
+  }
+
+  const lastCol = colLetter(headerRow.length - 1 || 0);
+  const range = `${tab}!A2:${lastCol}`;
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: config.sheet_id, range });
   const rows = res.data.values || [];
 
-  const upsert = db.prepare(`
-    INSERT INTO products (sheet_config_id, row_index, product_name, brand, price, mrp, discount, image_url, description, product_url, schedule_date, status, updated_at)
-    VALUES (@sheet_config_id, @row_index, @product_name, @brand, @price, @mrp, @discount, @image_url, @description, @product_url, @schedule_date, @status, CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO NOTHING
-  `);
+  db.prepare('UPDATE sheets_config SET column_map = ? WHERE id = ?').run(JSON.stringify(columnMap), config.id);
 
   rows.forEach((row, idx) => {
     const rowIndex = idx + 2; // 1-based, header is row 1
+    const get = (field) => (columnMap[field] !== undefined ? row[columnMap[field]] : undefined);
     const existing = db.prepare('SELECT id FROM products WHERE sheet_config_id = ? AND row_index = ?').get(config.id, rowIndex);
     const data = {
       sheet_config_id: config.id,
       row_index: rowIndex,
-      product_name: row[0] || '',
-      brand: row[1] || '',
-      price: parseFloat(row[2]) || 0,
-      mrp: parseFloat(row[3]) || 0,
-      discount: parseFloat(row[4]) || 0,
-      image_url: row[5] || '',
-      description: row[6] || '',
-      product_url: row[7] || '',
-      schedule_date: row[8] || '',
-      status: row[9] || 'Pending',
+      product_name: get('product_name') || '',
+      brand: get('brand') || '',
+      price: parseFloat(get('price')) || 0,
+      mrp: parseFloat(get('mrp')) || 0,
+      discount: parseFloat(String(get('discount') || '').replace('%', '')) || 0,
+      image_url: get('image_url') || '',
+      description: get('description') || '',
+      product_url: get('product_url') || '',
+      schedule_date: get('schedule_date') || '',
+      status: get('status') || 'Pending',
     };
+    if (!data.product_name) return; // skip blank trailing rows
     if (existing) {
       db.prepare(`UPDATE products SET product_name=?, brand=?, price=?, mrp=?, discount=?, image_url=?, description=?, product_url=?, schedule_date=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
         .run(data.product_name, data.brand, data.price, data.mrp, data.discount, data.image_url, data.description, data.product_url, data.schedule_date, data.status, existing.id);
@@ -109,8 +167,11 @@ async function syncSheet(config) {
 }
 
 async function writeStatus(config, rowIndex, status) {
+  const columnMap = JSON.parse(config.column_map || '{}');
+  if (columnMap.status === undefined) return; // sheet has no Status column — nothing to write back
   const sheets = await getSheetsClient();
-  const range = `${config.tab_name || 'Sheet1'}!J${rowIndex}`;
+  const tab = config.tab_name || 'Sheet1';
+  const range = `${tab}!${colLetter(columnMap.status)}${rowIndex}`;
   await sheets.spreadsheets.values.update({
     spreadsheetId: config.sheet_id,
     range,

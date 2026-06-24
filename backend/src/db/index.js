@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS sheets_config (
   sheet_id TEXT,
   tab_name TEXT DEFAULT 'Sheet1',
   number_id INTEGER,
+  column_map TEXT DEFAULT '{}',            -- detected header->column index map, set on first sync
   last_synced_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -131,6 +132,12 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 `);
+
+// Lightweight migration: add columns that didn't exist in earlier versions of this table.
+const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().map((c) => c.name);
+if (!sheetsConfigCols.includes('column_map')) {
+  db.exec("ALTER TABLE sheets_config ADD COLUMN column_map TEXT DEFAULT '{}'");
+}
 
 const defaultSettings = {
   business_name: 'My Business',
