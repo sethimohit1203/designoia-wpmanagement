@@ -1,0 +1,125 @@
+const cron = require('node-cron');
+const db = require('../db');
+const wa = require('./waManager');
+const { syncSheet, writeStatus } = require('./sheetsService');
+
+function getSetting(key, fallback) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+
+function applyVariables(template, contact) {
+  return template
+    .replace(/\{name\}/g, contact.name || '')
+    .replace(/\{date\}/g, new Date().toLocaleDateString('en-IN'))
+    .replace(/\{vehicle\}/g, contact.vehicle || '');
+}
+
+async function runCampaign(campaign) {
+  db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ?").run(campaign.id);
+  const contacts = campaign.group_name && campaign.group_name !== 'All'
+    ? db.prepare("SELECT * FROM contacts WHERE status = 'active' AND group_name = ?").all(campaign.group_name)
+    : db.prepare("SELECT * FROM contacts WHERE status = 'active'").all();
+
+  const autoRotate = getSetting('auto_rotate', 'true') === 'true';
+  let numberId = campaign.number_id;
+  let sentCount = 0;
+  let failedCount = 0;
+
+  for (const contact of contacts) {
+    let useNumberId = numberId;
+    if (autoRotate) {
+      const next = wa.pickNextAvailableNumber(numberId);
+      if (!next) {
+        failedCount++;
+        continue;
+      }
+      useNumberId = next.id;
+    }
+    const body = applyVariables(campaign.message || '', contact);
+    try {
+      await wa.sendMessage(useNumberId, contact.phone, body, campaign.media_path || null);
+      db.prepare(`INSERT INTO messages (campaign_id, number_id, contact_id, to_phone, body, status, sent_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)`)
+        .run(campaign.id, useNumberId, contact.id, contact.phone, body, 'sent');
+      sentCount++;
+    } catch (err) {
+      db.prepare(`INSERT INTO messages (campaign_id, number_id, contact_id, to_phone, body, status, error) VALUES (?,?,?,?,?,?,?)`)
+        .run(campaign.id, useNumberId, contact.id, contact.phone, body, 'failed', err.message);
+      failedCount++;
+    }
+    const delayMs = (campaign.delay_seconds || 8) * 1000 + (Math.random() * 4000 - 2000);
+    await new Promise((r) => setTimeout(r, Math.max(1000, delayMs)));
+  }
+
+  const stats = JSON.stringify({ sent: sentCount, failed: failedCount, total: contacts.length });
+  db.prepare("UPDATE campaigns SET status = 'sent', stats = ? WHERE id = ?").run(stats, campaign.id);
+
+  if (campaign.recurrence && campaign.recurrence !== 'none') {
+    const next = new Date(campaign.scheduled_at);
+    if (campaign.recurrence === 'daily') next.setDate(next.getDate() + 1);
+    if (campaign.recurrence === 'weekly') next.setDate(next.getDate() + 7);
+    if (campaign.recurrence === 'monthly') next.setMonth(next.getMonth() + 1);
+    db.prepare('INSERT INTO campaigns (name, group_name, template_id, number_id, message, media_path, scheduled_at, recurrence, delay_seconds) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(campaign.name, campaign.group_name, campaign.template_id, campaign.number_id, campaign.message, campaign.media_path, next.toISOString(), campaign.recurrence, campaign.delay_seconds);
+  }
+}
+
+async function checkScheduledCampaigns() {
+  const now = new Date().toISOString();
+  const due = db.prepare("SELECT * FROM campaigns WHERE status = 'scheduled' AND scheduled_at <= ?").all(now);
+  for (const c of due) {
+    runCampaign(c).catch((e) => console.error('Campaign run error:', e.message));
+  }
+}
+
+async function checkSheetSchedules() {
+  const configs = db.prepare('SELECT * FROM sheets_config').all();
+  const todayStr = new Date();
+  const dd = String(todayStr.getDate()).padStart(2, '0');
+  const mm = String(todayStr.getMonth() + 1).padStart(2, '0');
+  const yyyy = todayStr.getFullYear();
+  const today = `${dd}/${mm}/${yyyy}`;
+
+  for (const config of configs) {
+    try {
+      await syncSheet(config);
+    } catch (e) {
+      console.error('Sheet sync failed for', config.id, e.message);
+      continue;
+    }
+    const due = db.prepare("SELECT * FROM products WHERE sheet_config_id = ? AND schedule_date = ? AND status = 'Pending'")
+      .all(config.id, today);
+
+    for (const product of due) {
+      const numberId = config.number_id || wa.list().find((n) => n.runtimeStatus === 'connected')?.id;
+      if (!numberId) continue;
+      const body = formatProductMessage(product);
+      try {
+        await wa.sendMessage(numberId, product.product_url ? product.phone : '', body); // placeholder; real target chosen via UI normally
+        db.prepare("UPDATE products SET status = 'Sent' WHERE id = ?").run(product.id);
+        await writeStatus(config, product.row_index, 'Sent').catch(() => {});
+      } catch (err) {
+        db.prepare("UPDATE products SET status = 'Failed' WHERE id = ?").run(product.id);
+        await writeStatus(config, product.row_index, 'Failed').catch(() => {});
+      }
+    }
+  }
+}
+
+function formatProductMessage(product) {
+  const discountBadge = product.discount ? `*${product.discount}% OFF*` : '';
+  return `*${product.product_name}*\n${product.brand || ''}\n\nPrice: Rs.${product.price} ${product.mrp ? `~Rs.${product.mrp}~` : ''} ${discountBadge}\n\n${product.description || ''}\n\n${product.product_url ? `Buy Now: ${product.product_url}` : ''}`;
+}
+
+function start() {
+  // Hourly: sheet schedule-date check
+  cron.schedule('0 * * * *', () => checkSheetSchedules().catch(console.error));
+  // Every minute: scheduled campaigns
+  cron.schedule('* * * * *', () => checkScheduledCampaigns().catch(console.error));
+  // Midnight: reset daily counters (also lazily handled in waManager, this is a safety net)
+  cron.schedule('0 0 * * *', () => {
+    db.prepare("UPDATE numbers SET messages_sent_today = 0, cooldown_until = NULL").run();
+  });
+}
+
+module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules };

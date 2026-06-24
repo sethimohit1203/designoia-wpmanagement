@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+backend/data/
+backend/sessions/
+backend/uploads/
+backend/.wwebjs_cache/
+backend/.wwebjs_auth/
+backend/google-credentials.json
+*.log
+.DS_Store

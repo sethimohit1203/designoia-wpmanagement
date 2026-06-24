@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+.chip {
+  @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold;
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5;
+}
+
+.btn-primary {
+  @apply bg-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-200 transition;
+}
+
+.input {
+  @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent;
+}

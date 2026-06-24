@@ -1,0 +1,14 @@
+export const navItems = [
+  { to: '/', label: 'Dashboard', icon: '📊' },
+  { to: '/numbers', label: 'Numbers', icon: '📱' },
+  { to: '/bulk-sender', label: 'Bulk Sender', icon: '✉️' },
+  { to: '/contacts', label: 'Contacts', icon: '👥' },
+  { to: '/templates', label: 'Templates', icon: '📝' },
+  { to: '/campaigns', label: 'Campaigns', icon: '🗓️' },
+  { to: '/chatbot', label: 'Chatbot', icon: '🤖' },
+  { to: '/analytics', label: 'Analytics', icon: '📈' },
+  { to: '/sheets', label: 'Sheets Sync', icon: '🧾' },
+  { to: '/groups', label: 'Groups', icon: '👨‍👩‍👧' },
+  { to: '/broadcast', label: 'Broadcast', icon: '📦' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
+];

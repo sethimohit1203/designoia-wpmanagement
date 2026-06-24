@@ -1,0 +1,237 @@
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
+const path = require('path');
+const db = require('../db');
+const EventEmitter = require('events');
+
+const SESSIONS_DIR = path.join(__dirname, '..', '..', 'sessions');
+
+/**
+ * Manages one whatsapp-web.js Client per connected WA number.
+ * Each number has a fully isolated Puppeteer/session (LocalAuth clientId = number row id).
+ */
+class WAManager extends EventEmitter {
+  constructor() {
+    super();
+    this.clients = new Map(); // numberId -> { client, qr, status }
+  }
+
+  list() {
+    return db.prepare('SELECT * FROM numbers ORDER BY id').all().map((n) => ({
+      ...n,
+      runtimeStatus: this.clients.get(n.id)?.status || n.status,
+      qr: this.clients.get(n.id)?.qr || null,
+    }));
+  }
+
+  addNumber(name) {
+    const info = db.prepare('INSERT INTO numbers (name, status) VALUES (?, ?)').run(name, 'disconnected');
+    return db.prepare('SELECT * FROM numbers WHERE id = ?').get(info.lastInsertRowid);
+  }
+
+  removeNumber(numberId) {
+    this.disconnect(numberId);
+    db.prepare('DELETE FROM numbers WHERE id = ?').run(numberId);
+  }
+
+  async connect(numberId) {
+    const row = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
+    if (!row) throw new Error('Number not found');
+    if (this.clients.has(numberId)) {
+      const existing = this.clients.get(numberId);
+      if (existing.status === 'connected') return existing;
+    }
+
+    const client = new Client({
+      authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
+      puppeteer: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      },
+    });
+
+    const entry = { client, qr: null, status: 'initializing' };
+    this.clients.set(numberId, entry);
+
+    client.on('qr', async (qr) => {
+      entry.qr = await qrcode.toDataURL(qr);
+      entry.status = 'qr';
+      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('qr', numberId);
+      this.emit('status', { numberId, status: 'qr' });
+    });
+
+    client.on('ready', async () => {
+      entry.qr = null;
+      entry.status = 'connected';
+      const me = client.info?.wid?.user || null;
+      db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
+        .run('connected', me, numberId);
+      this.emit('status', { numberId, status: 'connected' });
+      this.fetchGroups(numberId).catch(() => {});
+    });
+
+    client.on('disconnected', (reason) => {
+      console.error(`[WA ${numberId}] disconnected. Reason:`, reason);
+      entry.status = 'disconnected';
+      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+      this.emit('status', { numberId, status: 'disconnected' });
+    });
+
+    client.on('auth_failure', (msg) => {
+      console.error(`[WA ${numberId}] auth_failure:`, msg);
+      entry.status = 'disconnected';
+      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+    });
+
+    client.on('change_state', (state) => {
+      console.log(`[WA ${numberId}] state changed:`, state);
+    });
+
+    client.on('message', async (msg) => {
+      try {
+        await this.handleIncoming(numberId, msg);
+      } catch (e) {
+        console.error('chatbot handling error', e.message);
+      }
+    });
+
+    client.initialize().catch((err) => {
+      entry.status = 'disconnected';
+      console.error(`[WA ${numberId}] failed to init:`, err.message, '\n', err.stack);
+    });
+
+    return entry;
+  }
+
+  disconnect(numberId) {
+    const entry = this.clients.get(numberId);
+    if (entry) {
+      entry.client.destroy().catch(() => {});
+      this.clients.delete(numberId);
+    }
+    db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+  }
+
+  getClient(numberId) {
+    const entry = this.clients.get(numberId);
+    if (!entry || entry.status !== 'connected') return null;
+    return entry.client;
+  }
+
+  // --- Sending ---
+
+  async sendMessage(numberId, to, body, mediaPath) {
+    const client = this.getClient(numberId);
+    if (!client) throw new Error('Number not connected');
+
+    const chatId = this._normalizeId(to);
+    let result;
+    if (mediaPath) {
+      const media = MessageMedia.fromFilePath(mediaPath);
+      result = await client.sendMessage(chatId, media, { caption: body });
+    } else {
+      result = await client.sendMessage(chatId, body);
+    }
+
+    this._bumpCounters(numberId);
+    return result;
+  }
+
+  _normalizeId(to) {
+    if (to.endsWith('@c.us') || to.endsWith('@g.us')) return to;
+    const digits = to.replace(/[^\d]/g, '');
+    return `${digits}@c.us`;
+  }
+
+  _bumpCounters(numberId) {
+    const today = new Date().toISOString().slice(0, 10);
+    const row = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
+    if (!row) return;
+    if (row.last_reset_date !== today) {
+      db.prepare('UPDATE numbers SET messages_sent_today = 1, last_reset_date = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(today, numberId);
+    } else {
+      db.prepare('UPDATE numbers SET messages_sent_today = messages_sent_today + 1, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(numberId);
+    }
+    const updated = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
+    const risk = Math.min(100, Math.round((updated.messages_sent_today / Math.max(1, updated.daily_limit)) * 100));
+    db.prepare('UPDATE numbers SET ban_risk_score = ? WHERE id = ?').run(risk, numberId);
+
+    if (updated.messages_sent_today >= updated.daily_limit) {
+      const until = new Date(Date.now() + updated.cooldown_minutes * 60000).toISOString();
+      db.prepare('UPDATE numbers SET cooldown_until = ? WHERE id = ?').run(until, numberId);
+    }
+  }
+
+  /** Picks the next eligible number for auto-rotate sending. */
+  pickNextAvailableNumber(preferredId) {
+    const today = new Date().toISOString().slice(0, 10);
+    const numbers = db.prepare("SELECT * FROM numbers WHERE status = 'connected'").all();
+    const eligible = numbers.filter((n) => {
+      const sentToday = n.last_reset_date === today ? n.messages_sent_today : 0;
+      const inCooldown = n.cooldown_until && new Date(n.cooldown_until) > new Date();
+      return sentToday < n.daily_limit && !inCooldown;
+    });
+    if (eligible.length === 0) return null;
+    if (preferredId) {
+      const preferred = eligible.find((n) => n.id === preferredId);
+      if (preferred) return preferred;
+    }
+    return eligible[0];
+  }
+
+  // --- Groups / Communities ---
+
+  async fetchGroups(numberId) {
+    const client = this.getClient(numberId);
+    if (!client) return [];
+    const chats = await client.getChats();
+    const groups = chats.filter((c) => c.isGroup);
+    db.prepare('DELETE FROM groups_cache WHERE number_id = ?').run(numberId);
+    const insert = db.prepare(
+      'INSERT INTO groups_cache (number_id, wa_id, name, type, member_count, is_admin, last_activity) VALUES (?,?,?,?,?,?,?)'
+    );
+    for (const g of groups) {
+      const isChannel = g.isChannel || false;
+      insert.run(
+        numberId,
+        g.id._serialized,
+        g.name,
+        isChannel ? 'channel' : 'group',
+        g.participants?.length || 0,
+        g.groupMetadata?.isAdmin ? 1 : 0,
+        new Date().toISOString()
+      );
+    }
+    return groups;
+  }
+
+  // --- Chatbot ---
+
+  async handleIncoming(numberId, msg) {
+    if (msg.fromMe) return;
+    const settingRow = db.prepare("SELECT value FROM settings WHERE key = 'auto_reply'").get();
+    if (settingRow && settingRow.value === 'false') return;
+
+    const body = (msg.body || '').trim().toLowerCase();
+    const flows = db
+      .prepare('SELECT * FROM chatbot_flows WHERE enabled = 1 AND (number_id IS NULL OR number_id = ?)')
+      .all(numberId);
+
+    let matched = flows.find((f) => !f.is_fallback && body === f.keyword.toLowerCase());
+    if (!matched) matched = flows.find((f) => !f.is_fallback && body.includes(f.keyword.toLowerCase()));
+    if (!matched) matched = flows.find((f) => f.is_fallback);
+
+    if (matched) {
+      const client = this.getClient(numberId);
+      if (client) {
+        const chat = await msg.getChat();
+        await chat.sendStateTyping();
+        await client.sendMessage(msg.from, matched.reply);
+      }
+    }
+  }
+}
+
+module.exports = new WAManager();
