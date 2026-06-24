@@ -16,16 +16,17 @@ router.get('/oauth/start', (req, res) => {
 });
 
 router.get('/oauth/callback', async (req, res) => {
-  console.log('[OAuth callback] hit:', req.originalUrl, 'query:', JSON.stringify(req.query));
   const { code, error } = req.query;
   if (error) return res.send(`<h3>Google authorization failed: ${error}</h3>`);
   if (!code) {
+    // Authorization codes are single-use. This happens when multiple OAuth
+    // attempts were started and only one was completed/redeemed — the
+    // other tabs land here with nothing left to exchange. Harmless.
     return res.status(400).send(
       '<h3>No authorization code received.</h3>' +
-      '<p>This page must be reached fresh by clicking "Connect Google Account" — ' +
-      'reloading or revisiting this URL from browser history will not work, since the ' +
-      'one-time code is only valid for the first request. Go back to the app and click the button again.</p>' +
-      `<p style="color:#888;font-size:12px">Debug — actual URL received: <code>${req.originalUrl}</code></p>`
+      '<p>This usually means this tab is a leftover from an earlier "Connect Google Account" ' +
+      'attempt (codes are single-use). Check if another tab already shows "connected" — if so, ' +
+      'you can close this one. Otherwise, go back and click "Connect Google Account" again.</p>'
     );
   }
   try {
