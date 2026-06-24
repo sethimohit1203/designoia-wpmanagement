@@ -1,7 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { extractSheetId, syncSheet, writeStatus } = require('../services/sheetsService');
+const { extractSheetId, syncSheet, writeStatus, getAuthUrl, handleOAuthCallback, isConnected } = require('../services/sheetsService');
+
+router.get('/oauth/status', (req, res) => {
+  res.json({ connected: isConnected() });
+});
+
+router.get('/oauth/start', (req, res) => {
+  try {
+    res.redirect(getAuthUrl());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/oauth/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.send(`<h3>Google authorization failed: ${error}</h3>`);
+  try {
+    await handleOAuthCallback(code);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.redirect(`${frontendUrl}/sheets?connected=1`);
+  } catch (e) {
+    res.status(500).send(`<h3>OAuth error: ${e.message}</h3>`);
+  }
+});
 
 router.get('/configs', (req, res) => {
   res.json(db.prepare('SELECT * FROM sheets_config ORDER BY id DESC').all());

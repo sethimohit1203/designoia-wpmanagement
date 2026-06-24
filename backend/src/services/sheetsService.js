@@ -6,23 +6,57 @@ const COLUMNS = [
   'description', 'product_url', 'schedule_date', 'status',
 ];
 
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
+
 function extractSheetId(url) {
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   return match ? match[1] : url; // allow raw ID too
 }
 
-function getAuth() {
-  // Service-account based auth (simplest for a self-hosted automation tool).
-  // Place a service-account JSON at backend/google-credentials.json and share the Sheet with its client_email.
-  const keyFile = require('path').join(__dirname, '..', '..', 'google-credentials.json');
-  const fs = require('fs');
-  if (!fs.existsSync(keyFile)) {
-    throw new Error('google-credentials.json not found. Add a Google service account key to backend/ and share your Sheet with its client_email.');
+function getOAuthClient() {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set in backend/.env');
   }
-  return new google.auth.GoogleAuth({
-    keyFile,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+}
+
+function getAuthUrl() {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent', // forces a refresh_token to be issued every time
+    scope: SCOPES,
   });
+}
+
+async function handleOAuthCallback(code) {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+  if (!tokens.refresh_token) {
+    throw new Error('No refresh_token returned by Google. Revoke prior access at https://myaccount.google.com/permissions and try connecting again.');
+  }
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run('google_refresh_token', tokens.refresh_token);
+  return true;
+}
+
+function isConnected() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").get();
+  return !!row?.value;
+}
+
+function getAuth() {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").get();
+  if (!row?.value) {
+    throw new Error('Google account not connected. Go to Sheets Sync and click "Connect Google Account" first.');
+  }
+  const client = getOAuthClient();
+  client.setCredentials({ refresh_token: row.value });
+  return client;
 }
 
 async function getSheetsClient() {
@@ -83,4 +117,4 @@ async function writeStatus(config, rowIndex, status) {
   });
 }
 
-module.exports = { extractSheetId, syncSheet, writeStatus };
+module.exports = { extractSheetId, syncSheet, writeStatus, getAuthUrl, handleOAuthCallback, isConnected };

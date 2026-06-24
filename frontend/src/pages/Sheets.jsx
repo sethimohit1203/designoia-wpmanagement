@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -7,6 +7,19 @@ export default function Sheets() {
   const qc = useQueryClient();
   const [url, setUrl] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('connected') === '1') {
+      toast.success('Google account connected');
+      window.history.replaceState({}, '', '/sheets');
+      qc.invalidateQueries({ queryKey: ['google-oauth-status'] });
+    }
+  }, []);
+
+  const { data: oauthStatus } = useQuery({
+    queryKey: ['google-oauth-status'],
+    queryFn: () => api.get('/sheets/oauth/status').then((r) => r.data),
+  });
 
   const { data: configs = [] } = useQuery({ queryKey: ['sheets-configs'], queryFn: () => api.get('/sheets/configs').then((r) => r.data) });
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
@@ -25,6 +38,7 @@ export default function Sheets() {
       if (res.data.syncError) toast.error(res.data.syncError);
       else toast.success('Sheet connected and synced');
     },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to connect sheet'),
   });
 
   const syncNow = useMutation({
@@ -42,11 +56,20 @@ export default function Sheets() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Google Sheets Sync <span className="chip bg-orange-50 text-orange-700 ml-2">SHEETS</span></h1>
 
-      <div className="card space-y-2">
-        <p className="text-sm text-gray-500">Paste your Google Sheet share URL. Share the sheet with the service account email in <code>backend/google-credentials.json</code>.</p>
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            {oauthStatus?.connected
+              ? '✅ Google account connected.'
+              : 'Connect your Google account once, then paste any Sheet URL you own or can edit.'}
+          </p>
+          <a href="/api/sheets/oauth/start" className="btn-secondary text-sm whitespace-nowrap">
+            {oauthStatus?.connected ? 'Reconnect Google' : 'Connect Google Account'}
+          </a>
+        </div>
         <div className="flex gap-2">
           <input className="input" placeholder="https://docs.google.com/spreadsheets/d/..." value={url} onChange={(e) => setUrl(e.target.value)} />
-          <button className="btn-primary" disabled={!url} onClick={() => connect.mutate()}>Connect</button>
+          <button className="btn-primary" disabled={!url || !oauthStatus?.connected} onClick={() => connect.mutate()}>Connect Sheet</button>
         </div>
       </div>
 
