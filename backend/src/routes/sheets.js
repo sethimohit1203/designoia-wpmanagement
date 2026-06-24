@@ -16,6 +16,7 @@ router.get('/oauth/start', (req, res) => {
 });
 
 router.get('/oauth/callback', async (req, res) => {
+  console.log('[OAuth callback] hit:', req.originalUrl, 'query:', JSON.stringify(req.query));
   const { code, error } = req.query;
   if (error) return res.send(`<h3>Google authorization failed: ${error}</h3>`);
   if (!code) {
@@ -23,7 +24,8 @@ router.get('/oauth/callback', async (req, res) => {
       '<h3>No authorization code received.</h3>' +
       '<p>This page must be reached fresh by clicking "Connect Google Account" — ' +
       'reloading or revisiting this URL from browser history will not work, since the ' +
-      'one-time code is only valid for the first request. Go back to the app and click the button again.</p>'
+      'one-time code is only valid for the first request. Go back to the app and click the button again.</p>' +
+      `<p style="color:#888;font-size:12px">Debug — actual URL received: <code>${req.originalUrl}</code></p>`
     );
   }
   try {
