@@ -50,6 +50,16 @@ export default function Sheets() {
     onError: (e) => toast.error(e.response?.data?.error || 'Sync failed'),
   });
 
+  const removeSheet = useMutation({
+    mutationFn: (id) => api.delete(`/sheets/configs/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sheets-configs'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Sheet removed');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to remove sheet'),
+  });
+
   const statusColor = { Pending: 'bg-amber-50 text-amber-700', Sent: 'bg-green-50 text-green-700', Failed: 'bg-red-50 text-red-700' };
 
   return (
@@ -80,7 +90,15 @@ export default function Sheets() {
               <div className="font-medium text-sm">{c.name}</div>
               <div className="text-xs text-gray-500">Last synced: {c.last_synced_at || 'never'}</div>
             </div>
-            <button className="btn-secondary text-sm" onClick={() => syncNow.mutate(c.id)}>Sync Now</button>
+            <div className="flex gap-2">
+              <button className="btn-secondary text-sm" onClick={() => syncNow.mutate(c.id)}>Sync Now</button>
+              <button
+                className="btn-secondary text-sm text-red-600"
+                onClick={() => { if (confirm(`Remove "${c.name}"? This deletes its synced products too.`)) removeSheet.mutate(c.id); }}
+              >
+                Remove
+              </button>
+            </div>
           </div>
         ))}
       </div>
