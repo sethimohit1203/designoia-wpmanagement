@@ -9,7 +9,7 @@
     "dev": "nodemon src/server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.21.0",
     "better-sqlite3": "^11.5.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

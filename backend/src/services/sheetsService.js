@@ -15,7 +15,7 @@ function extractSheetId(url) {
 
 function getOAuthClient() {
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set in backend/.env');
+    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set (check backend/.env locally, or your host\'s environment variables in production)');
   }
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,

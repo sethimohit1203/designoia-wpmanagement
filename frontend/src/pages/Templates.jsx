@@ -48,7 +48,7 @@ export default function Templates() {
             </select>
           </div>
           <button className="btn-primary" disabled={!useCase || aiGenerate.isPending} onClick={() => aiGenerate.mutate()}>
-            {aiGenerate.isPending ? 'Generating…' : 'Generate with Claude'}
+            {aiGenerate.isPending ? 'Generating…' : 'Generate with Gemini'}
           </button>
         </div>
 
