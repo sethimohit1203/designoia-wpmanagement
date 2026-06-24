@@ -48,6 +48,13 @@ router.put('/:id/limits', (req, res) => {
   res.json({ ok: true });
 });
 
+router.put('/:id/warmup', (req, res) => {
+  const id = Number(req.params.id);
+  const { warmup_enabled } = req.body;
+  db.prepare('UPDATE numbers SET warmup_enabled = ? WHERE id = ?').run(warmup_enabled ? 1 : 0, id);
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   wa.removeNumber(Number(req.params.id));
   res.json({ ok: true });

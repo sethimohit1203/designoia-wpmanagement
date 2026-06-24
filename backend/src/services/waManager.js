@@ -21,6 +21,7 @@ class WAManager extends EventEmitter {
       ...n,
       runtimeStatus: this.clients.get(n.id)?.status || n.status,
       qr: this.clients.get(n.id)?.qr || null,
+      effective_daily_limit: this.getEffectiveDailyLimit(n),
     }));
   }
 
@@ -65,6 +66,11 @@ class WAManager extends EventEmitter {
       entry.qr = null;
       entry.status = 'connected';
       const me = client.info?.wid?.user || null;
+      const row = db.prepare('SELECT first_connected_at FROM numbers WHERE id = ?').get(numberId);
+      if (!row?.first_connected_at) {
+        // Warm-up clock starts the first time this number ever goes live, not on every reconnect.
+        db.prepare('UPDATE numbers SET first_connected_at = CURRENT_TIMESTAMP WHERE id = ?').run(numberId);
+      }
       db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
         .run('connected', me, numberId);
       this.emit('status', { numberId, status: 'connected' });
@@ -119,6 +125,18 @@ class WAManager extends EventEmitter {
     return entry.client;
   }
 
+  /**
+   * Anti-ban warm-up ramp (per the product spec): a freshly linked number
+   * starts at 20 msgs/day and scales up 20% per week, capped at the number's
+   * configured daily_limit ceiling. Disable per-number via warmup_enabled.
+   */
+  getEffectiveDailyLimit(row) {
+    if (!row.warmup_enabled || !row.first_connected_at) return row.daily_limit;
+    const weeksLive = Math.floor((Date.now() - new Date(row.first_connected_at).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const ramped = Math.round(20 * Math.pow(1.2, weeksLive));
+    return Math.min(row.daily_limit, ramped);
+  }
+
   // --- Sending ---
 
   async sendMessage(numberId, to, body, mediaPath) {
@@ -156,10 +174,11 @@ class WAManager extends EventEmitter {
         .run(numberId);
     }
     const updated = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
-    const risk = Math.min(100, Math.round((updated.messages_sent_today / Math.max(1, updated.daily_limit)) * 100));
+    const effectiveLimit = this.getEffectiveDailyLimit(updated);
+    const risk = Math.min(100, Math.round((updated.messages_sent_today / Math.max(1, effectiveLimit)) * 100));
     db.prepare('UPDATE numbers SET ban_risk_score = ? WHERE id = ?').run(risk, numberId);
 
-    if (updated.messages_sent_today >= updated.daily_limit) {
+    if (updated.messages_sent_today >= effectiveLimit) {
       const until = new Date(Date.now() + updated.cooldown_minutes * 60000).toISOString();
       db.prepare('UPDATE numbers SET cooldown_until = ? WHERE id = ?').run(until, numberId);
     }
@@ -172,7 +191,7 @@ class WAManager extends EventEmitter {
     const eligible = numbers.filter((n) => {
       const sentToday = n.last_reset_date === today ? n.messages_sent_today : 0;
       const inCooldown = n.cooldown_until && new Date(n.cooldown_until) > new Date();
-      return sentToday < n.daily_limit && !inCooldown;
+      return sentToday < this.getEffectiveDailyLimit(n) && !inCooldown;
     });
     if (eligible.length === 0) return null;
     if (preferredId) {

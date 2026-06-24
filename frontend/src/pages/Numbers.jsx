@@ -57,6 +57,12 @@ export default function Numbers() {
     onError: onErr,
   });
 
+  const toggleWarmup = useMutation({
+    mutationFn: ({ id, warmup_enabled }) => api.put(`/numbers/${id}/warmup`, { warmup_enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['numbers'] }),
+    onError: onErr,
+  });
+
   const activeNumber = numbers.find((n) => n.id === qrFor);
 
   return (
@@ -87,12 +93,22 @@ export default function Numbers() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>Sent today: <b>{n.messages_sent_today}</b>/{n.daily_limit}</div>
+              <div>Sent today: <b>{n.messages_sent_today}</b>/{n.effective_daily_limit ?? n.daily_limit}</div>
               <div>Ban risk: <b className={n.ban_risk_score > 70 ? 'text-red-600' : n.ban_risk_score > 40 ? 'text-amber-600' : 'text-green-600'}>{n.ban_risk_score}%</b></div>
             </div>
 
+            {n.warmup_enabled ? (
+              <div className="text-xs bg-amber-50 text-amber-700 rounded-lg px-3 py-2">
+                🌱 Warm-up active: today's real limit is <b>{n.effective_daily_limit}</b>/day, ramping toward your {n.daily_limit}/day ceiling over the coming weeks. New numbers ban easily if pushed too hard too fast.
+              </div>
+            ) : (
+              <div className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-2">
+                ⚠️ Warm-up disabled — sending at full {n.daily_limit}/day from day one. Not recommended for a number under ~4 weeks old.
+              </div>
+            )}
+
             <div className="flex gap-2 text-xs items-center">
-              <label>Daily limit</label>
+              <label>Daily limit ceiling</label>
               <input
                 type="number"
                 defaultValue={n.daily_limit}
@@ -107,6 +123,15 @@ export default function Numbers() {
                 onBlur={(e) => updateLimits.mutate({ id: n.id, daily_limit: n.daily_limit, cooldown_minutes: Number(e.target.value) })}
               />
             </div>
+
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={!!n.warmup_enabled}
+                onChange={(e) => toggleWarmup.mutate({ id: n.id, warmup_enabled: e.target.checked })}
+              />
+              Warm-up ramp (recommended)
+            </label>
 
             <div className="flex gap-2">
               {n.runtimeStatus !== 'connected' ? (

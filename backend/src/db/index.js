@@ -17,13 +17,15 @@ CREATE TABLE IF NOT EXISTS numbers (
   phone TEXT,
   status TEXT DEFAULT 'disconnected',     -- disconnected | qr | connected
   is_active INTEGER DEFAULT 0,            -- currently the global active sender
-  daily_limit INTEGER DEFAULT 200,
+  daily_limit INTEGER DEFAULT 20,         -- the CEILING once fully warmed up; actual limit ramps up to this
   cooldown_minutes INTEGER DEFAULT 60,
   messages_sent_today INTEGER DEFAULT 0,
   last_reset_date TEXT,
   cooldown_until TEXT,
   ban_risk_score INTEGER DEFAULT 0,       -- 0-100
   last_activity TEXT,
+  warmup_enabled INTEGER DEFAULT 1,       -- ramp daily limit gradually instead of using daily_limit from day 1
+  first_connected_at TEXT,                -- set once, when the number first goes 'connected' — warm-up clock starts here
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -144,6 +146,12 @@ if (!sheetsConfigCols.includes('column_map')) {
 if (!sheetsConfigCols.includes('target_type')) {
   db.exec('ALTER TABLE sheets_config ADD COLUMN target_type TEXT');
   db.exec('ALTER TABLE sheets_config ADD COLUMN target_id TEXT');
+}
+
+const numbersCols = db.prepare("PRAGMA table_info(numbers)").all().map((c) => c.name);
+if (!numbersCols.includes('warmup_enabled')) {
+  db.exec('ALTER TABLE numbers ADD COLUMN warmup_enabled INTEGER DEFAULT 1');
+  db.exec('ALTER TABLE numbers ADD COLUMN first_connected_at TEXT');
 }
 
 const defaultSettings = {
