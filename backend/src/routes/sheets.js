@@ -18,6 +18,14 @@ router.get('/oauth/start', (req, res) => {
 router.get('/oauth/callback', async (req, res) => {
   const { code, error } = req.query;
   if (error) return res.send(`<h3>Google authorization failed: ${error}</h3>`);
+  if (!code) {
+    return res.status(400).send(
+      '<h3>No authorization code received.</h3>' +
+      '<p>This page must be reached fresh by clicking "Connect Google Account" — ' +
+      'reloading or revisiting this URL from browser history will not work, since the ' +
+      'one-time code is only valid for the first request. Go back to the app and click the button again.</p>'
+    );
+  }
   try {
     await handleOAuthCallback(code);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
