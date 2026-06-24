@@ -3,8 +3,8 @@ const router = express.Router();
 const db = require('../db');
 const wa = require('../services/waManager');
 const multer = require('multer');
-const path = require('path');
-const upload = multer({ dest: path.join(__dirname, '..', '..', 'uploads') });
+const { uploadsDir } = require('../utils/paths');
+const upload = multer({ dest: uploadsDir });
 
 function applyVariables(template, contact) {
   return template

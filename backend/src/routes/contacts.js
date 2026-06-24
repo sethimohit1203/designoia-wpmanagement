@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const multer = require('multer');
-const upload = multer({ dest: require('path').join(__dirname, '..', '..', 'uploads') });
+const { uploadsDir } = require('../utils/paths');
+const upload = multer({ dest: uploadsDir });
 const fs = require('fs');
 
 router.get('/', (req, res) => {

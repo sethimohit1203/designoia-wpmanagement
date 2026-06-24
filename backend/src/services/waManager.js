@@ -4,7 +4,7 @@ const path = require('path');
 const db = require('../db');
 const EventEmitter = require('events');
 
-const SESSIONS_DIR = path.join(__dirname, '..', '..', 'sessions');
+const { sessionsDir: SESSIONS_DIR } = require('../utils/paths');
 
 /**
  * Manages one whatsapp-web.js Client per connected WA number.

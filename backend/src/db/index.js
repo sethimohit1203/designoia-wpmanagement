@@ -1,8 +1,9 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const { dbDir } = require('../utils/paths');
 
-const dataDir = path.join(__dirname, '..', '..', 'data');
+const dataDir = dbDir;
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'designoia.db'));
