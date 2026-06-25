@@ -1,6 +1,7 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const EventEmitter = require('events');
 
@@ -33,6 +34,19 @@ class WAManager extends EventEmitter {
   removeNumber(numberId) {
     this.disconnect(numberId);
     db.prepare('DELETE FROM numbers WHERE id = ?').run(numberId);
+    const sessionPath = path.join(SESSIONS_DIR, `session-wa_${numberId}`);
+    fs.rm(sessionPath, { recursive: true, force: true }, (err) => {
+      if (err) console.error(`Failed to clean up session folder for number ${numberId}:`, err.message);
+    });
+  }
+
+  /** Wipes a number's saved browser session without deleting the number row — use when a
+   * session is stuck/corrupted (e.g. after a Chromium version change) and needs a fresh QR. */
+  resetSession(numberId) {
+    this.disconnect(numberId);
+    const sessionPath = path.join(SESSIONS_DIR, `session-wa_${numberId}`);
+    fs.rmSync(sessionPath, { recursive: true, force: true });
+    db.prepare("UPDATE numbers SET status = 'disconnected', phone = NULL WHERE id = ?").run(numberId);
   }
 
   async connect(numberId) {

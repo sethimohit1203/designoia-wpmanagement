@@ -33,6 +33,15 @@ router.post('/:id/disconnect', (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/:id/reset-session', (req, res) => {
+  try {
+    wa.resetSession(Number(req.params.id));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/:id/activate', (req, res) => {
   const id = Number(req.params.id);
   db.prepare('UPDATE numbers SET is_active = 0').run();

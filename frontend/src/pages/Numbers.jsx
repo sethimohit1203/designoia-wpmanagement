@@ -63,6 +63,15 @@ export default function Numbers() {
     onError: onErr,
   });
 
+  const resetSession = useMutation({
+    mutationFn: (id) => api.post(`/numbers/${id}/reset-session`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['numbers'] });
+      toast.success('Session cleared — click Connect / Show QR for a fresh scan');
+    },
+    onError: onErr,
+  });
+
   const activeNumber = numbers.find((n) => n.id === qrFor);
 
   return (
@@ -139,6 +148,13 @@ export default function Numbers() {
               ) : (
                 <button className="btn-secondary text-sm" onClick={() => disconnect.mutate(n.id)}>Disconnect</button>
               )}
+              <button
+                className="btn-secondary text-sm"
+                title="Use this if Connect / Show QR keeps failing silently — clears the saved browser session and starts fresh"
+                onClick={() => { if (confirm('Reset session for this number? You will need to scan a fresh QR.')) resetSession.mutate(n.id); }}
+              >
+                Reset Session
+              </button>
               <button className="btn-secondary text-sm text-red-600" onClick={() => remove.mutate(n.id)}>Remove</button>
             </div>
 
