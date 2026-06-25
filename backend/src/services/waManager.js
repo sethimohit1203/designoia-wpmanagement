@@ -2,6 +2,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const db = require('../db');
 const EventEmitter = require('events');
 
@@ -24,6 +25,14 @@ class WAManager extends EventEmitter {
    * once at process boot — before any client of ours has launched anything — any such
    * file found here is guaranteed stale. */
   _cleanupStaleLocks() {
+    // Belt-and-suspenders at boot too: this container's own previous Node process
+    // may have crashed (e.g. OOM) without Puppeteer's parent getting a chance to
+    // tear down its child, leaving a real Chromium process alive across restarts.
+    try {
+      execSync('pkill -9 -f "session-wa_" || true', { stdio: 'ignore' });
+    } catch {
+      // no matching process — fine
+    }
     if (!fs.existsSync(SESSIONS_DIR)) return;
     for (const entry of fs.readdirSync(SESSIONS_DIR)) {
       this._removeSingletonFiles(path.join(SESSIONS_DIR, entry));
@@ -53,6 +62,19 @@ class WAManager extends EventEmitter {
     }
     if (removedAny) console.log(`Removed stale Chromium singleton files in ${profileDir}`);
     return removedAny;
+  }
+
+  /** Deleting the singleton files isn't enough if a real orphaned Chromium process
+   * is still alive — e.g. Puppeteer's launch() can reject while the process it just
+   * spawned keeps running in the background. Matches by command line (Chromium's
+   * --user-data-dir argument contains this session's own path, so this can't
+   * accidentally hit any other process) and kills it outright before relaunching. */
+  _killOrphanedChromium(numberId) {
+    try {
+      execSync(`pkill -9 -f "session-wa_${numberId}[/\\\\]" || true`, { stdio: 'ignore' });
+    } catch {
+      // pkill exits non-zero when it finds nothing to kill — not an error for us.
+    }
   }
 
   list() {
@@ -101,6 +123,11 @@ class WAManager extends EventEmitter {
       await existing.client.destroy().catch(() => {});
       this.clients.delete(numberId);
     }
+
+    // Belt-and-suspenders: kill any orphaned Chromium process for this exact
+    // session before launching, regardless of what the file-based cleanup found.
+    this._killOrphanedChromium(numberId);
+    this._removeSingletonFiles(path.join(SESSIONS_DIR, `session-wa_${numberId}`));
 
     const client = new Client({
       authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
@@ -201,10 +228,11 @@ class WAManager extends EventEmitter {
       // once automatically instead of requiring a manual reset-session + reconnect.
       const isLockConflict = /SingletonLock|Failed to launch the browser process/i.test(message);
       if (isLockConflict && !skipRetry) {
-        console.log(`[WA ${numberId}] launch failed on profile lock — clearing singleton files and retrying once`);
+        console.log(`[WA ${numberId}] launch failed on profile lock — killing any orphaned process and retrying once`);
+        this._killOrphanedChromium(numberId);
         this._removeSingletonFiles(path.join(SESSIONS_DIR, `session-wa_${numberId}`));
         this.clients.delete(numberId);
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1500));
         return this.connect(numberId, true);
       }
 
