@@ -72,6 +72,12 @@ class WAManager extends EventEmitter {
     if (this.clients.has(numberId)) {
       const existing = this.clients.get(numberId);
       if (existing.status === 'connected') return existing;
+      // Any other status means a previous attempt's Chromium may still be alive
+      // (mid-launch, hung, or crashed without firing 'disconnected'). Launching a
+      // second Client against the same LocalAuth profile dir causes Chromium's
+      // SingletonLock to reject the new process outright — tear down first.
+      await existing.client.destroy().catch(() => {});
+      this.clients.delete(numberId);
     }
 
     const client = new Client({
@@ -338,6 +344,16 @@ class WAManager extends EventEmitter {
         await client.sendMessage(msg.from, matched.reply);
       }
     }
+  }
+
+  /** Closes every Chromium instance cleanly. Without this, `docker stop`/redeploys
+   * SIGKILL the Node process and leave orphaned Chromium processes holding each
+   * profile's SingletonLock, which then blocks the next launch attempt entirely. */
+  async shutdown() {
+    console.log(`Shutting down ${this.clients.size} WhatsApp session(s)...`);
+    await Promise.all(
+      [...this.clients.values()].map((entry) => entry.client.destroy().catch(() => {}))
+    );
   }
 }
 

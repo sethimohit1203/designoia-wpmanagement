@@ -25,7 +25,21 @@ app.get('/api/health', (req, res) => res.json({ ok: true, service: 'designoia-wp
 const scheduler = require('./services/scheduler');
 scheduler.start();
 
+const wa = require('./services/waManager');
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Designoia-WPManagement backend running on http://localhost:${PORT}`);
 });
+
+// `docker stop` sends SIGTERM. Without this, Node exits immediately and leaves
+// orphaned Chromium processes holding each session's SingletonLock, breaking
+// the next connect attempt after every redeploy.
+async function gracefulShutdown(signal) {
+  console.log(`${signal} received, closing WhatsApp sessions before exit...`);
+  await wa.shutdown();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 10000); // hard exit if close hangs
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
