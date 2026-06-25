@@ -64,6 +64,15 @@ router.put('/:id/warmup', (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/:id/diagnose', async (req, res) => {
+  try {
+    const result = await wa.diagnose(Number(req.params.id));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.delete('/:id', (req, res) => {
   wa.removeNumber(Number(req.params.id));
   res.json({ ok: true });

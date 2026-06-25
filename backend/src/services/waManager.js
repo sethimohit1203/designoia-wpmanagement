@@ -245,6 +245,31 @@ class WAManager extends EventEmitter {
     return eligible[0];
   }
 
+  // --- Diagnostics ---
+
+  /** Isolates whether a hang is in Puppeteer's CDP transport itself, or specifically
+   * in WhatsApp Web's internal Store object — run this instead of guessing further. */
+  async diagnose(numberId) {
+    const entry = this.clients.get(numberId);
+    if (!entry) return { error: 'no client entry for this number' };
+    const client = entry.client;
+    const withTimeout = (label, promise, ms = 10000) =>
+      Promise.race([
+        promise.then((value) => ({ label, ok: true, value: typeof value === 'object' ? JSON.stringify(value).slice(0, 200) : value })),
+        new Promise((resolve) => setTimeout(() => resolve({ label, ok: false, value: `timed out after ${ms}ms` }), ms)),
+      ]);
+
+    const results = {};
+    results.entryStatus = entry.status;
+    results.basicEvaluate = await withTimeout('basicEvaluate', client.pupPage.evaluate(() => 1 + 1));
+    results.documentTitle = await withTimeout('documentTitle', client.pupPage.evaluate(() => document.title));
+    results.storeExists = await withTimeout('storeExists', client.pupPage.evaluate(() => typeof window.Store !== 'undefined'));
+    results.storeChatExists = await withTimeout('storeChatExists', client.pupPage.evaluate(() => typeof window.Store?.Chat !== 'undefined'));
+    results.storeChatCount = await withTimeout('storeChatCount', client.pupPage.evaluate(() => window.Store?.Chat?.getModelsArray?.().length ?? 'Store.Chat.getModelsArray unavailable'));
+    results.clientState = await withTimeout('clientState', client.getState());
+    return results;
+  }
+
   // --- Groups / Communities ---
 
   async fetchGroups(numberId) {
