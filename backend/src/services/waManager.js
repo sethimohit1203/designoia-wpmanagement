@@ -18,20 +18,32 @@ class WAManager extends EventEmitter {
     this._cleanupStaleLocks();
   }
 
-  /** Chromium leaves a SingletonLock file in its profile dir if the process is killed
+  /** Chromium leaves Singleton* files in its profile dir if the process is killed
    * non-gracefully (e.g. `docker stop`/redeploy). On the next launch this makes Chromium
    * think another process owns the profile and refuses to start. Since this only runs
-   * once at process boot — before any client of ours has launched anything — any lock
+   * once at process boot — before any client of ours has launched anything — any such
    * file found here is guaranteed stale. */
   _cleanupStaleLocks() {
     if (!fs.existsSync(SESSIONS_DIR)) return;
     for (const entry of fs.readdirSync(SESSIONS_DIR)) {
-      const lockPath = path.join(SESSIONS_DIR, entry, 'SingletonLock');
-      if (fs.existsSync(lockPath)) {
-        fs.rmSync(lockPath, { force: true });
-        console.log(`Removed stale SingletonLock for ${entry}`);
+      this._removeSingletonFiles(path.join(SESSIONS_DIR, entry));
+    }
+  }
+
+  /** Chrome writes three singleton files at the root of its user-data-dir:
+   * SingletonLock, SingletonSocket, SingletonCookie. All three need to be gone
+   * for a fresh launch to be accepted as legitimate. */
+  _removeSingletonFiles(profileDir) {
+    let removedAny = false;
+    for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+      const p = path.join(profileDir, name);
+      if (fs.existsSync(p)) {
+        fs.rmSync(p, { force: true });
+        removedAny = true;
       }
     }
+    if (removedAny) console.log(`Removed stale Chromium singleton files in ${profileDir}`);
+    return removedAny;
   }
 
   list() {
@@ -66,7 +78,7 @@ class WAManager extends EventEmitter {
     db.prepare("UPDATE numbers SET status = 'disconnected', phone = NULL WHERE id = ?").run(numberId);
   }
 
-  async connect(numberId) {
+  async connect(numberId, skipRetry = false) {
     const row = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
     if (!row) throw new Error('Number not found');
     if (this.clients.has(numberId)) {
@@ -170,10 +182,23 @@ class WAManager extends EventEmitter {
       }
     });
 
-    client.initialize().catch((err) => {
+    client.initialize().catch(async (err) => {
       entry.status = 'disconnected';
       const message = err?.message || String(err);
       console.error(`[WA ${numberId}] failed to init:`, message, '\n', err?.stack);
+
+      // Self-heal: a launch failure citing the profile lock means a singleton file
+      // survived somehow despite the boot-time cleanup. Clear it and retry exactly
+      // once automatically instead of requiring a manual reset-session + reconnect.
+      const isLockConflict = /SingletonLock|Failed to launch the browser process/i.test(message);
+      if (isLockConflict && !skipRetry) {
+        console.log(`[WA ${numberId}] launch failed on profile lock — clearing singleton files and retrying once`);
+        this._removeSingletonFiles(path.join(SESSIONS_DIR, `session-wa_${numberId}`));
+        this.clients.delete(numberId);
+        await new Promise((r) => setTimeout(r, 1000));
+        return this.connect(numberId, true);
+      }
+
       db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `init failed: ${message}`, numberId);
     });
 
