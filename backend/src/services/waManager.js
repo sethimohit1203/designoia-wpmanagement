@@ -59,10 +59,14 @@ class WAManager extends EventEmitter {
 
     const client = new Client({
       authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
       puppeteer: {
-        headless: true,
+        // Old headless ("true") is fingerprinted by sites more easily than the newer
+        // headless mode, which renders much closer to a real browser.
+        headless: 'new',
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         protocolTimeout: 120000,
+        defaultViewport: { width: 1280, height: 900 },
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -73,6 +77,7 @@ class WAManager extends EventEmitter {
           '--disable-gpu',
           '--no-first-run',
           '--no-zygote',
+          '--window-size=1280,900',
         ],
       },
     });
@@ -236,7 +241,7 @@ class WAManager extends EventEmitter {
   async fetchGroups(numberId) {
     const client = this.getClient(numberId);
     if (!client) return [];
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('getChats() timed out after 25s — WhatsApp Web session may be unresponsive, try reconnecting this number')), 25000));
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('getChats() timed out after 45s — WhatsApp Web session may be unresponsive, try reconnecting this number')), 45000));
     const chats = await Promise.race([client.getChats(), timeout]);
     const groups = chats.filter((c) => c.isGroup);
     db.prepare('DELETE FROM groups_cache WHERE number_id = ?').run(numberId);
