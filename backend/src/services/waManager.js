@@ -71,11 +71,12 @@ class WAManager extends EventEmitter {
     if (!row) throw new Error('Number not found');
     if (this.clients.has(numberId)) {
       const existing = this.clients.get(numberId);
-      if (existing.status === 'connected') return existing;
-      // Any other status means a previous attempt's Chromium may still be alive
-      // (mid-launch, hung, or crashed without firing 'disconnected'). Launching a
-      // second Client against the same LocalAuth profile dir causes Chromium's
-      // SingletonLock to reject the new process outright — tear down first.
+      // 'connected', 'initializing', and 'qr' all mean a Chromium instance for this
+      // number is currently alive and progressing normally — repeated Connect clicks
+      // (or any caller retrying) must not tear that down and race a second launch
+      // against the same LocalAuth profile dir, which is exactly what trips
+      // Chromium's SingletonLock. Only a truly dead entry should be relaunched.
+      if (['connected', 'initializing', 'qr'].includes(existing.status)) return existing;
       await existing.client.destroy().catch(() => {});
       this.clients.delete(numberId);
     }
