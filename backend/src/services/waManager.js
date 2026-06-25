@@ -15,6 +15,23 @@ class WAManager extends EventEmitter {
   constructor() {
     super();
     this.clients = new Map(); // numberId -> { client, qr, status }
+    this._cleanupStaleLocks();
+  }
+
+  /** Chromium leaves a SingletonLock file in its profile dir if the process is killed
+   * non-gracefully (e.g. `docker stop`/redeploy). On the next launch this makes Chromium
+   * think another process owns the profile and refuses to start. Since this only runs
+   * once at process boot — before any client of ours has launched anything — any lock
+   * file found here is guaranteed stale. */
+  _cleanupStaleLocks() {
+    if (!fs.existsSync(SESSIONS_DIR)) return;
+    for (const entry of fs.readdirSync(SESSIONS_DIR)) {
+      const lockPath = path.join(SESSIONS_DIR, entry, 'SingletonLock');
+      if (fs.existsSync(lockPath)) {
+        fs.rmSync(lockPath, { force: true });
+        console.log(`Removed stale SingletonLock for ${entry}`);
+      }
+    }
   }
 
   list() {
