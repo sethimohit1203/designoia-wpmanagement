@@ -37,9 +37,18 @@ class WAManager extends EventEmitter {
     let removedAny = false;
     for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
       const p = path.join(profileDir, name);
-      if (fs.existsSync(p)) {
+      // These are symlinks, often to a target that doesn't itself exist
+      // (SingletonLock's "target" is just identifying data, not a real path,
+      // and SingletonSocket points into /tmp which may have been cleared).
+      // fs.existsSync() follows symlinks and reports false for a dangling one,
+      // which silently skipped deleting these on every previous attempt.
+      // lstatSync sees the symlink itself regardless of where it points.
+      try {
+        fs.lstatSync(p);
         fs.rmSync(p, { force: true });
         removedAny = true;
+      } catch (e) {
+        if (e.code !== 'ENOENT') console.error(`Failed to remove ${p}:`, e.message);
       }
     }
     if (removedAny) console.log(`Removed stale Chromium singleton files in ${profileDir}`);
