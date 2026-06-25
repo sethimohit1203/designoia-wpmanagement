@@ -62,7 +62,18 @@ class WAManager extends EventEmitter {
       puppeteer: {
         headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        protocolTimeout: 120000,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          // Containers' /dev/shm is usually tiny (64MB default); Chromium's
+          // shared-memory IPC hangs CDP calls like getChats() without this.
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
+        ],
       },
     });
 
@@ -88,7 +99,12 @@ class WAManager extends EventEmitter {
       db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
         .run('connected', me, numberId);
       this.emit('status', { numberId, status: 'connected' });
-      this.fetchGroups(numberId).catch(() => {});
+      // whatsapp-web.js's internal Store isn't always fully hydrated the instant
+      // 'ready' fires; calling getChats() immediately can hang indefinitely.
+      // Give it a few seconds before the first fetch.
+      setTimeout(() => {
+        this.fetchGroups(numberId).catch((e) => console.error(`[WA ${numberId}] initial group fetch failed:`, e.message));
+      }, 5000);
     });
 
     client.on('disconnected', (reason) => {
@@ -220,7 +236,8 @@ class WAManager extends EventEmitter {
   async fetchGroups(numberId) {
     const client = this.getClient(numberId);
     if (!client) return [];
-    const chats = await client.getChats();
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('getChats() timed out after 25s — WhatsApp Web session may be unresponsive, try reconnecting this number')), 25000));
+    const chats = await Promise.race([client.getChats(), timeout]);
     const groups = chats.filter((c) => c.isGroup);
     db.prepare('DELETE FROM groups_cache WHERE number_id = ?').run(numberId);
     const insert = db.prepare(
