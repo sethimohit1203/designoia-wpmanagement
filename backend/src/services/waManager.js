@@ -282,12 +282,16 @@ class WAManager extends EventEmitter {
 
     const results = {};
     results.entryStatus = entry.status;
+    results.pageUrl = await withTimeout('pageUrl', client.pupPage.evaluate(() => window.location.href));
     results.basicEvaluate = await withTimeout('basicEvaluate', client.pupPage.evaluate(() => 1 + 1));
     results.documentTitle = await withTimeout('documentTitle', client.pupPage.evaluate(() => document.title));
+    results.wwebjsExists = await withTimeout('wwebjsExists', client.pupPage.evaluate(() => typeof window.WWebJS !== 'undefined'));
+    results.wwebjsGetChatsExists = await withTimeout('wwebjsGetChatsExists', client.pupPage.evaluate(() => typeof window.WWebJS?.getChats === 'function'));
     results.storeExists = await withTimeout('storeExists', client.pupPage.evaluate(() => typeof window.Store !== 'undefined'));
-    results.storeChatExists = await withTimeout('storeChatExists', client.pupPage.evaluate(() => typeof window.Store?.Chat !== 'undefined'));
-    results.storeChatCount = await withTimeout('storeChatCount', client.pupPage.evaluate(() => window.Store?.Chat?.getModelsArray?.().length ?? 'Store.Chat.getModelsArray unavailable'));
     results.clientState = await withTimeout('clientState', client.getState());
+    if (results.wwebjsGetChatsExists?.value === true) {
+      results.actualGetChatsCount = await withTimeout('actualGetChatsCount', client.pupPage.evaluate(async () => (await window.WWebJS.getChats()).length), 20000);
+    }
     return results;
   }
 
