@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS numbers (
   last_activity TEXT,
   warmup_enabled INTEGER DEFAULT 1,       -- ramp daily limit gradually instead of using daily_limit from day 1
   first_connected_at TEXT,                -- set once, when the number first goes 'connected' — warm-up clock starts here
+  last_error TEXT,                        -- last init/disconnect failure reason, visible via GET /api/numbers
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -152,6 +153,9 @@ const numbersCols = db.prepare("PRAGMA table_info(numbers)").all().map((c) => c.
 if (!numbersCols.includes('warmup_enabled')) {
   db.exec('ALTER TABLE numbers ADD COLUMN warmup_enabled INTEGER DEFAULT 1');
   db.exec('ALTER TABLE numbers ADD COLUMN first_connected_at TEXT');
+}
+if (!numbersCols.includes('last_error')) {
+  db.exec('ALTER TABLE numbers ADD COLUMN last_error TEXT');
 }
 
 const defaultSettings = {

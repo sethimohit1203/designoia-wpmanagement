@@ -131,28 +131,31 @@ class WAManager extends EventEmitter {
         // Warm-up clock starts the first time this number ever goes live, not on every reconnect.
         db.prepare('UPDATE numbers SET first_connected_at = CURRENT_TIMESTAMP WHERE id = ?').run(numberId);
       }
-      db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP WHERE id = ?')
+      db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP, last_error = NULL WHERE id = ?')
         .run('connected', me, numberId);
       this.emit('status', { numberId, status: 'connected' });
       // whatsapp-web.js's internal Store isn't always fully hydrated the instant
       // 'ready' fires; calling getChats() immediately can hang indefinitely.
       // Give it a few seconds before the first fetch.
       setTimeout(() => {
-        this.fetchGroups(numberId).catch((e) => console.error(`[WA ${numberId}] initial group fetch failed:`, e.message));
+        this.fetchGroups(numberId).catch((e) => {
+          console.error(`[WA ${numberId}] initial group fetch failed:`, e.message);
+          db.prepare('UPDATE numbers SET last_error = ? WHERE id = ?').run(`group fetch: ${e.message}`, numberId);
+        });
       }, 5000);
     });
 
     client.on('disconnected', (reason) => {
       console.error(`[WA ${numberId}] disconnected. Reason:`, reason);
       entry.status = 'disconnected';
-      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `disconnected: ${reason}`, numberId);
       this.emit('status', { numberId, status: 'disconnected' });
     });
 
     client.on('auth_failure', (msg) => {
       console.error(`[WA ${numberId}] auth_failure:`, msg);
       entry.status = 'disconnected';
-      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `auth_failure: ${msg}`, numberId);
     });
 
     client.on('change_state', (state) => {
@@ -169,7 +172,9 @@ class WAManager extends EventEmitter {
 
     client.initialize().catch((err) => {
       entry.status = 'disconnected';
-      console.error(`[WA ${numberId}] failed to init:`, err.message, '\n', err.stack);
+      const message = err?.message || String(err);
+      console.error(`[WA ${numberId}] failed to init:`, message, '\n', err?.stack);
+      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `init failed: ${message}`, numberId);
     });
 
     return entry;
@@ -273,6 +278,7 @@ class WAManager extends EventEmitter {
   async diagnose(numberId) {
     const entry = this.clients.get(numberId);
     if (!entry) return { error: 'no client entry for this number' };
+    if (!entry.client.pupPage) return { entryStatus: entry.status, error: 'page not created yet (still launching Chromium / mid-auth)' };
     const client = entry.client;
     const withTimeout = (label, promise, ms = 10000) =>
       Promise.race([
