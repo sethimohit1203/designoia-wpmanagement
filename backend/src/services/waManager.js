@@ -60,6 +60,15 @@ class WAManager extends EventEmitter {
     const client = new Client({
       authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+      // Pin to a known-stable WhatsApp Web build instead of fetching whatever
+      // web.whatsapp.com serves live. Live WA Web frequently changes internal
+      // Store structures that this library hooks into directly — a mismatch
+      // is the textbook cause of Store-dependent calls like getChats() hanging
+      // indefinitely on an otherwise-healthy connected session.
+      webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+      },
       puppeteer: {
         // Old headless ("true") is fingerprinted by sites more easily than the newer
         // headless mode, which renders much closer to a real browser.
