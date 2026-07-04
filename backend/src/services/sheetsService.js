@@ -156,7 +156,10 @@ async function syncSheet(config) {
       mrp: parseFloat(get('mrp')) || 0,
       discount: parseFloat(String(get('discount') || '').replace('%', '')) || 0,
       image_url: get('image_url') || '',
-      description: get('description') || '',
+      // =AI() is a client-side Google Workspace Labs function — the API always
+      // returns the raw formula string, never the computed result. Treat those
+      // cells as empty so the formula text doesn't end up in WhatsApp messages.
+      description: (() => { const d = get('description') || ''; return d.startsWith('=') ? '' : d; })(),
       product_url: get('product_url') || '',
       schedule_date: get('schedule_date') || '',
       status: get('status') || 'Pending',

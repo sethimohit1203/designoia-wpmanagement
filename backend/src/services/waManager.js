@@ -256,11 +256,12 @@ class WAManager extends EventEmitter {
       }
       const isVideo = ['.mp4', '.mov', '.avi', '.mkv'].includes(ext);
       const isAudio = ['.mp3', '.ogg', '.wav', '.aac'].includes(ext);
-      const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/jpeg', '.gif': 'image/gif' };
       let content;
       if (isVideo) content = { video: buffer, caption: body };
       else if (isAudio) content = { audio: buffer, mimetype: 'audio/mp4', ptt: false };
-      else content = { image: buffer, mimetype: mimeMap[ext] || 'image/jpeg', caption: body };
+      // No explicit mimetype for images — Baileys reads the magic bytes from the
+      // buffer and sets the correct mimetype automatically (handles webp, jpeg, png).
+      else content = { image: buffer, caption: body };
       await sock.sendMessage(jid, content);
     } else {
       await sock.sendMessage(jid, { text: body });

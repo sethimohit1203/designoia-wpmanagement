@@ -129,15 +129,16 @@ function formatProductMessage(product, aiBody) {
   const body = aiBody || product.description || product.brand || '';
   if (body) lines.push(body, '');
 
-  // Price: show selling price + crossed-out MRP if available
-  const price = product.price;
-  const mrp = product.mrp;
-  const priceParts = [`💰 Price: ₹${price}`];
-  if (mrp && Number(mrp) > Number(price)) {
-    priceParts.push(`~₹${mrp}~`);
-    if (product.discount) priceParts.push(`(${Math.round(product.discount)}% off)`);
+  // Price block: offer price, MRP struck-through, discount %
+  const price = Number(product.price) || 0;
+  const mrp = Number(product.mrp) || 0;
+  const discount = Math.round(Number(product.discount) || 0);
+  if (mrp > 0 && mrp > price) {
+    lines.push(`🏷️ MRP: ~₹${mrp}~`);
+    lines.push(`💰 Offer Price: ₹${price}${discount ? `  (${discount}% off)` : ''}`, '');
+  } else {
+    lines.push(`💰 Price: ₹${price}`, '');
   }
-  lines.push(priceParts.join(' '), '');
 
   const footerNote = getSetting('broadcast_footer_note', '');
   if (footerNote) lines.push(footerNote, '');
