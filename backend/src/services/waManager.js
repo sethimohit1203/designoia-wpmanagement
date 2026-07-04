@@ -1,6 +1,7 @@
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const sharp = require('sharp');
 const db = require('../db');
 const EventEmitter = require('events');
 const { sessionsDir: SESSIONS_DIR } = require('../utils/paths');
@@ -242,8 +243,10 @@ class WAManager extends EventEmitter {
           if (!ct.startsWith('image/')) throw new Error(`Not an image (content-type: ${ct})`);
           buffer = Buffer.from(await res.arrayBuffer());
           if (buffer.length < 500) throw new Error(`Image too small (${buffer.length} B) — likely blocked`);
-          // Prefer content-type from server; fall back to URL extension
-          ext = ct.includes('webp') ? '.webp' : ct.includes('png') ? '.png' : ct.includes('gif') ? '.gif' : '.jpg';
+          // Convert any format (webp, png, etc.) to JPEG — WhatsApp reliably
+          // accepts JPEG; webp sent as-is causes "wrong image file" errors.
+          buffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+          ext = '.jpg';
         } catch (e) {
           console.warn(`[WA ${numberId}] image download failed (${e.message}) — sending text only`);
           await sock.sendMessage(jid, { text: body });
@@ -253,6 +256,10 @@ class WAManager extends EventEmitter {
       } else {
         buffer = fs.readFileSync(mediaPath);
         ext = path.extname(mediaPath).toLowerCase();
+        if (['.webp', '.png', '.gif'].includes(ext)) {
+          buffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+          ext = '.jpg';
+        }
       }
       const isVideo = ['.mp4', '.mov', '.avi', '.mkv'].includes(ext);
       const isAudio = ['.mp3', '.ogg', '.wav', '.aac'].includes(ext);
