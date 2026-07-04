@@ -89,16 +89,25 @@ const FIELD_MATCHERS = [
 ];
 
 function buildColumnMap(headerRow) {
-  const map = {}; // field -> column index
+  const map = {};
   const usedCols = new Set();
-  for (const { field, tokens } of FIELD_MATCHERS) {
-    for (let col = 0; col < headerRow.length; col++) {
-      if (usedCols.has(col)) continue;
-      const normalized = normalizeHeader(headerRow[col]);
-      if (tokens.some((t) => normalized === t || normalized.includes(t))) {
-        map[field] = col;
-        usedCols.add(col);
-        break;
+  // Two-pass: exact match first, then substring.
+  // This prevents "Meesho Price (₹)" from stealing the 'price' field away from
+  // a more specific "Selling Price" column — exact 'sellingprice' wins in pass 1.
+  for (const pass of ['exact', 'includes']) {
+    for (const { field, tokens } of FIELD_MATCHERS) {
+      if (map[field] !== undefined) continue; // already claimed in pass 1
+      for (let col = 0; col < headerRow.length; col++) {
+        if (usedCols.has(col)) continue;
+        const normalized = normalizeHeader(headerRow[col]);
+        const hit = pass === 'exact'
+          ? tokens.some((t) => normalized === t)
+          : tokens.some((t) => normalized.includes(t));
+        if (hit) {
+          map[field] = col;
+          usedCols.add(col);
+          break;
+        }
       }
     }
   }

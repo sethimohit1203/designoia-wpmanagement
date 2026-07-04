@@ -229,10 +229,21 @@ class WAManager extends EventEmitter {
       let buffer, ext;
       if (typeof mediaPath === 'string' && mediaPath.startsWith('http')) {
         try {
-          const res = await fetch(mediaPath, { signal: AbortSignal.timeout(15000) });
+          const res = await fetch(mediaPath, {
+            signal: AbortSignal.timeout(20000),
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept': 'image/webp,image/apng,image/jpeg,image/*,*/*;q=0.8',
+              'Referer': new URL(mediaPath).origin + '/',
+            },
+          });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const ct = res.headers.get('content-type') || '';
+          if (!ct.startsWith('image/')) throw new Error(`Not an image (content-type: ${ct})`);
           buffer = Buffer.from(await res.arrayBuffer());
-          ext = path.extname(new URL(mediaPath).pathname).toLowerCase() || '.jpg';
+          if (buffer.length < 500) throw new Error(`Image too small (${buffer.length} B) — likely blocked`);
+          // Prefer content-type from server; fall back to URL extension
+          ext = ct.includes('webp') ? '.webp' : ct.includes('png') ? '.png' : ct.includes('gif') ? '.gif' : '.jpg';
         } catch (e) {
           console.warn(`[WA ${numberId}] image download failed (${e.message}) — sending text only`);
           await sock.sendMessage(jid, { text: body });
@@ -245,10 +256,11 @@ class WAManager extends EventEmitter {
       }
       const isVideo = ['.mp4', '.mov', '.avi', '.mkv'].includes(ext);
       const isAudio = ['.mp3', '.ogg', '.wav', '.aac'].includes(ext);
+      const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/jpeg', '.gif': 'image/gif' };
       let content;
       if (isVideo) content = { video: buffer, caption: body };
       else if (isAudio) content = { audio: buffer, mimetype: 'audio/mp4', ptt: false };
-      else content = { image: buffer, caption: body };
+      else content = { image: buffer, mimetype: mimeMap[ext] || 'image/jpeg', caption: body };
       await sock.sendMessage(jid, content);
     } else {
       await sock.sendMessage(jid, { text: body });
