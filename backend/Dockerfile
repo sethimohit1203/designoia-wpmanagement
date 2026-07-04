@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY backend/package*.json ./
-RUN npm install --omit=dev
+RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    npm install --omit=dev
 
 COPY backend/ .
 
