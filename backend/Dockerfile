@@ -3,6 +3,7 @@ FROM node:20-slim
 # Baileys uses the WhatsApp multi-device WebSocket protocol directly.
 # No Chromium/Puppeteer needed — the image stays tiny.
 RUN apt-get update && apt-get install -y \
+    git \
     python3 \
     make \
     g++ \
