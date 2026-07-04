@@ -4,6 +4,7 @@ FROM node:20-slim
 # No Chromium/Puppeteer needed — the image stays tiny.
 RUN apt-get update && apt-get install -y \
     git \
+    ca-certificates \
     python3 \
     make \
     g++ \
