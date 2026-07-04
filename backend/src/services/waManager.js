@@ -1,80 +1,34 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
 const db = require('../db');
 const EventEmitter = require('events');
-
 const { sessionsDir: SESSIONS_DIR } = require('../utils/paths');
 
-/**
- * Manages one whatsapp-web.js Client per connected WA number.
- * Each number has a fully isolated Puppeteer/session (LocalAuth clientId = number row id).
- */
+// Baileys is ESM-only; load it once via dynamic import and cache it.
+let _baileys = null;
+async function getBaileys() {
+  if (!_baileys) _baileys = await import('@whiskeysockets/baileys');
+  return _baileys;
+}
+
+const noop = () => {};
+const makeLogger = () => ({
+  level: 'silent',
+  fatal: noop,
+  error: (obj, msg) => console.error('[Baileys]', msg || (typeof obj === 'object' ? obj?.message : obj)),
+  warn: noop,
+  info: noop,
+  debug: noop,
+  trace: noop,
+  child: () => makeLogger(),
+});
+
 class WAManager extends EventEmitter {
   constructor() {
     super();
-    this.clients = new Map(); // numberId -> { client, qr, status }
-    this._cleanupStaleLocks();
-  }
-
-  /** Chromium leaves Singleton* files in its profile dir if the process is killed
-   * non-gracefully (e.g. `docker stop`/redeploy). On the next launch this makes Chromium
-   * think another process owns the profile and refuses to start. Since this only runs
-   * once at process boot — before any client of ours has launched anything — any such
-   * file found here is guaranteed stale. */
-  _cleanupStaleLocks() {
-    // Belt-and-suspenders at boot too: this container's own previous Node process
-    // may have crashed (e.g. OOM) without Puppeteer's parent getting a chance to
-    // tear down its child, leaving a real Chromium process alive across restarts.
-    try {
-      execSync('pkill -9 -f "session-wa_" || true', { stdio: 'ignore' });
-    } catch {
-      // no matching process — fine
-    }
-    if (!fs.existsSync(SESSIONS_DIR)) return;
-    for (const entry of fs.readdirSync(SESSIONS_DIR)) {
-      this._removeSingletonFiles(path.join(SESSIONS_DIR, entry));
-    }
-  }
-
-  /** Chrome writes three singleton files at the root of its user-data-dir:
-   * SingletonLock, SingletonSocket, SingletonCookie. All three need to be gone
-   * for a fresh launch to be accepted as legitimate. */
-  _removeSingletonFiles(profileDir) {
-    let removedAny = false;
-    for (const name of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
-      const p = path.join(profileDir, name);
-      // These are symlinks, often to a target that doesn't itself exist
-      // (SingletonLock's "target" is just identifying data, not a real path,
-      // and SingletonSocket points into /tmp which may have been cleared).
-      // fs.existsSync() follows symlinks and reports false for a dangling one,
-      // which silently skipped deleting these on every previous attempt.
-      // lstatSync sees the symlink itself regardless of where it points.
-      try {
-        fs.lstatSync(p);
-        fs.rmSync(p, { force: true });
-        removedAny = true;
-      } catch (e) {
-        if (e.code !== 'ENOENT') console.error(`Failed to remove ${p}:`, e.message);
-      }
-    }
-    if (removedAny) console.log(`Removed stale Chromium singleton files in ${profileDir}`);
-    return removedAny;
-  }
-
-  /** Deleting the singleton files isn't enough if a real orphaned Chromium process
-   * is still alive — e.g. Puppeteer's launch() can reject while the process it just
-   * spawned keeps running in the background. Matches by command line (Chromium's
-   * --user-data-dir argument contains this session's own path, so this can't
-   * accidentally hit any other process) and kills it outright before relaunching. */
-  _killOrphanedChromium(numberId) {
-    try {
-      execSync(`pkill -9 -f "session-wa_${numberId}[/\\\\]" || true`, { stdio: 'ignore' });
-    } catch {
-      // pkill exits non-zero when it finds nothing to kill — not an error for us.
-    }
+    this.clients = new Map(); // numberId -> { sock, qr, status }
+    this._manualDisconnect = new Set(); // numberIds disconnected by the user (no auto-reconnect)
   }
 
   list() {
@@ -94,204 +48,205 @@ class WAManager extends EventEmitter {
   removeNumber(numberId) {
     this.disconnect(numberId);
     db.prepare('DELETE FROM numbers WHERE id = ?').run(numberId);
-    const sessionPath = path.join(SESSIONS_DIR, `session-wa_${numberId}`);
-    fs.rm(sessionPath, { recursive: true, force: true }, (err) => {
-      if (err) console.error(`Failed to clean up session folder for number ${numberId}:`, err.message);
-    });
+    fs.rm(path.join(SESSIONS_DIR, `wa_${numberId}`), { recursive: true, force: true }, () => {});
   }
 
-  /** Wipes a number's saved browser session without deleting the number row — use when a
-   * session is stuck/corrupted (e.g. after a Chromium version change) and needs a fresh QR. */
   resetSession(numberId) {
     this.disconnect(numberId);
-    const sessionPath = path.join(SESSIONS_DIR, `session-wa_${numberId}`);
-    fs.rmSync(sessionPath, { recursive: true, force: true });
+    fs.rmSync(path.join(SESSIONS_DIR, `wa_${numberId}`), { recursive: true, force: true });
     db.prepare("UPDATE numbers SET status = 'disconnected', phone = NULL WHERE id = ?").run(numberId);
   }
 
-  async connect(numberId, skipRetry = false) {
+  _destroySocket(numberId) {
+    const entry = this.clients.get(numberId);
+    if (entry?.sock) {
+      try { entry.sock.end(undefined); } catch {}
+      try { entry.sock.ws?.close?.(); } catch {}
+    }
+    this.clients.delete(numberId);
+  }
+
+  disconnect(numberId) {
+    this._manualDisconnect.add(numberId);
+    this._destroySocket(numberId);
+    db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
+  }
+
+  async connect(numberId) {
     const row = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
     if (!row) throw new Error('Number not found');
+
+    this._manualDisconnect.delete(numberId);
+
     if (this.clients.has(numberId)) {
       const existing = this.clients.get(numberId);
-      // 'connected', 'initializing', and 'qr' all mean a Chromium instance for this
-      // number is currently alive and progressing normally — repeated Connect clicks
-      // (or any caller retrying) must not tear that down and race a second launch
-      // against the same LocalAuth profile dir, which is exactly what trips
-      // Chromium's SingletonLock. Only a truly dead entry should be relaunched.
       if (['connected', 'initializing', 'qr'].includes(existing.status)) return existing;
-      await existing.client.destroy().catch(() => {});
-      this.clients.delete(numberId);
+      this._destroySocket(numberId);
     }
 
-    // Belt-and-suspenders: kill any orphaned Chromium process for this exact
-    // session before launching, regardless of what the file-based cleanup found.
-    this._killOrphanedChromium(numberId);
-    this._removeSingletonFiles(path.join(SESSIONS_DIR, `session-wa_${numberId}`));
+    const {
+      default: makeWASocket,
+      useMultiFileAuthState,
+      DisconnectReason,
+      fetchLatestBaileysVersion,
+    } = await getBaileys();
 
-    const client = new Client({
-      authStrategy: new LocalAuth({ clientId: `wa_${numberId}`, dataPath: SESSIONS_DIR }),
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-      // Reverted: pinning to a fixed WA Web build (2.2412.54) left window.Store
-      // entirely unexposed for both Business and regular accounts — confirmed via
-      // /api/numbers/:id/diagnose (clientState CONNECTED, page loaded fine, but
-      // storeExists: false). That pin was based on an unconfirmed theory and made
-      // things worse. Falls back to whatsapp-web.js's default remote webVersionCache
-      // pointed at its own maintained version index, not a fixed snapshot.
-      puppeteer: {
-        // Old headless ("true") is fingerprinted by sites more easily than the newer
-        // headless mode, which renders much closer to a real browser.
-        headless: 'new',
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-        protocolTimeout: 120000,
-        defaultViewport: { width: 1280, height: 900 },
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          // Containers' /dev/shm is usually tiny (64MB default); Chromium's
-          // shared-memory IPC hangs CDP calls like getChats() without this.
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--window-size=1280,900',
-        ],
-      },
+    const sessionDir = path.join(SESSIONS_DIR, `wa_${numberId}`);
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+
+    let version;
+    try {
+      const res = await fetchLatestBaileysVersion();
+      version = res.version;
+    } catch {
+      version = [2, 3000, 1015901307];
+    }
+
+    const sock = makeWASocket({
+      version,
+      logger: makeLogger(),
+      auth: state,
+      printQRInTerminal: false,
+      // Identify as a standard browser — avoids the automation fingerprint
+      browser: ['Ubuntu', 'Chrome', '124.0.0'],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 30000,
+      keepAliveIntervalMs: 25000,
+      // Lower profile — don't broadcast presence on connect
+      markOnlineOnConnect: false,
+      // Don't pull full message history; we only need real-time
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: false,
+      // Retry config — transient network errors self-heal
+      retryRequestDelayMs: 2000,
     });
 
-    const entry = { client, qr: null, status: 'initializing' };
+    const entry = { sock, qr: null, status: 'initializing' };
     this.clients.set(numberId, entry);
 
-    client.on('qr', async (qr) => {
-      entry.qr = await qrcode.toDataURL(qr);
-      entry.status = 'qr';
-      db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('qr', numberId);
-      this.emit('status', { numberId, status: 'qr' });
-    });
+    sock.ev.on('creds.update', saveCreds);
 
-    client.on('ready', async () => {
-      entry.qr = null;
-      entry.status = 'connected';
-      const me = client.info?.wid?.user || null;
-      const row = db.prepare('SELECT first_connected_at FROM numbers WHERE id = ?').get(numberId);
-      if (!row?.first_connected_at) {
-        // Warm-up clock starts the first time this number ever goes live, not on every reconnect.
-        db.prepare('UPDATE numbers SET first_connected_at = CURRENT_TIMESTAMP WHERE id = ?').run(numberId);
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        try {
+          entry.qr = await qrcode.toDataURL(qr);
+          entry.status = 'qr';
+          db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('qr', numberId);
+          this.emit('status', { numberId, status: 'qr' });
+        } catch (e) {
+          console.error(`[WA ${numberId}] QR generation error:`, e.message);
+        }
       }
-      db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP, last_error = NULL WHERE id = ?')
-        .run('connected', me, numberId);
-      this.emit('status', { numberId, status: 'connected' });
-      // whatsapp-web.js's internal Store isn't always fully hydrated the instant
-      // 'ready' fires; calling getChats() immediately can hang indefinitely.
-      // Give it a few seconds before the first fetch.
-      setTimeout(() => {
-        this.fetchGroups(numberId).catch((e) => {
-          console.error(`[WA ${numberId}] initial group fetch failed:`, e.message);
-          db.prepare('UPDATE numbers SET last_error = ? WHERE id = ?').run(`group fetch: ${e.message}`, numberId);
-        });
-      }, 5000);
-    });
 
-    client.on('disconnected', (reason) => {
-      console.error(`[WA ${numberId}] disconnected. Reason:`, reason);
-      entry.status = 'disconnected';
-      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `disconnected: ${reason}`, numberId);
-      this.emit('status', { numberId, status: 'disconnected' });
-    });
-
-    client.on('auth_failure', (msg) => {
-      console.error(`[WA ${numberId}] auth_failure:`, msg);
-      entry.status = 'disconnected';
-      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `auth_failure: ${msg}`, numberId);
-    });
-
-    client.on('change_state', (state) => {
-      console.log(`[WA ${numberId}] state changed:`, state);
-    });
-
-    client.on('message', async (msg) => {
-      try {
-        await this.handleIncoming(numberId, msg);
-      } catch (e) {
-        console.error('chatbot handling error', e.message);
+      if (connection === 'open') {
+        entry.qr = null;
+        entry.status = 'connected';
+        // sock.user.id is like "919876543210:0@s.whatsapp.net"
+        const userId = sock.user?.id?.split(':')[0]?.split('@')[0] || null;
+        const dbRow = db.prepare('SELECT first_connected_at FROM numbers WHERE id = ?').get(numberId);
+        if (!dbRow?.first_connected_at) {
+          db.prepare('UPDATE numbers SET first_connected_at = CURRENT_TIMESTAMP WHERE id = ?').run(numberId);
+        }
+        db.prepare('UPDATE numbers SET status = ?, phone = ?, last_activity = CURRENT_TIMESTAMP, last_error = NULL WHERE id = ?')
+          .run('connected', userId, numberId);
+        this.emit('status', { numberId, status: 'connected' });
+        console.log(`[WA ${numberId}] connected as ${userId}`);
+        // Give a moment for the session to fully settle, then fetch groups
+        setTimeout(() => {
+          this.fetchGroups(numberId).catch((e) => {
+            console.error(`[WA ${numberId}] initial group fetch failed:`, e.message);
+          });
+        }, 3000);
       }
-    });
 
-    client.initialize().catch(async (err) => {
-      entry.status = 'disconnected';
-      const message = err?.message || String(err);
-      console.error(`[WA ${numberId}] failed to init:`, message, '\n', err?.stack);
+      if (connection === 'close') {
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const { DisconnectReason: DR } = await getBaileys();
+        const loggedOut = statusCode === DR.loggedOut;
+        const reason = lastDisconnect?.error?.message || `closed (code ${statusCode})`;
 
-      // Self-heal: a launch failure citing the profile lock means a singleton file
-      // survived somehow despite the boot-time cleanup. Clear it and retry exactly
-      // once automatically instead of requiring a manual reset-session + reconnect.
-      const isLockConflict = /SingletonLock|Failed to launch the browser process/i.test(message);
-      if (isLockConflict && !skipRetry) {
-        console.log(`[WA ${numberId}] launch failed on profile lock — killing any orphaned process and retrying once`);
-        this._killOrphanedChromium(numberId);
-        this._removeSingletonFiles(path.join(SESSIONS_DIR, `session-wa_${numberId}`));
+        entry.status = 'disconnected';
+        db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?')
+          .run('disconnected', reason, numberId);
         this.clients.delete(numberId);
-        await new Promise((r) => setTimeout(r, 1500));
-        return this.connect(numberId, true);
-      }
+        this.emit('status', { numberId, status: 'disconnected' });
 
-      db.prepare('UPDATE numbers SET status = ?, last_error = ? WHERE id = ?').run('disconnected', `init failed: ${message}`, numberId);
+        if (loggedOut) {
+          // WhatsApp invalidated the session — wipe saved keys so next connect shows fresh QR
+          console.log(`[WA ${numberId}] logged out by WhatsApp — clearing session files`);
+          fs.rm(path.join(SESSIONS_DIR, `wa_${numberId}`), { recursive: true, force: true }, () => {});
+          db.prepare("UPDATE numbers SET phone = NULL WHERE id = ?").run(numberId);
+        } else if (!this._manualDisconnect.has(numberId)) {
+          // Transient drop — auto-reconnect once after 5 s
+          console.log(`[WA ${numberId}] connection dropped (${reason}) — reconnecting in 5 s`);
+          setTimeout(() => this.connect(numberId).catch(() => {}), 5000);
+        }
+      }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+      for (const msg of messages) {
+        if (msg.key.fromMe) continue;
+        try {
+          await this.handleIncoming(numberId, sock, msg);
+        } catch (e) {
+          console.error(`[WA ${numberId}] chatbot error:`, e.message);
+        }
+      }
     });
 
     return entry;
   }
 
-  disconnect(numberId) {
-    const entry = this.clients.get(numberId);
-    if (entry) {
-      entry.client.destroy().catch(() => {});
-      this.clients.delete(numberId);
-    }
-    db.prepare('UPDATE numbers SET status = ? WHERE id = ?').run('disconnected', numberId);
-  }
-
   getClient(numberId) {
     const entry = this.clients.get(numberId);
     if (!entry || entry.status !== 'connected') return null;
-    return entry.client;
+    return entry.sock;
   }
 
-  /**
-   * Anti-ban warm-up ramp (per the product spec): a freshly linked number
-   * starts at 20 msgs/day and scales up 20% per week, capped at the number's
-   * configured daily_limit ceiling. Disable per-number via warmup_enabled.
-   */
+  // --- Anti-ban warm-up ramp ---
+
   getEffectiveDailyLimit(row) {
     if (!row.warmup_enabled || !row.first_connected_at) return row.daily_limit;
     const weeksLive = Math.floor((Date.now() - new Date(row.first_connected_at).getTime()) / (7 * 24 * 60 * 60 * 1000));
-    const ramped = Math.round(20 * Math.pow(1.2, weeksLive));
-    return Math.min(row.daily_limit, ramped);
+    return Math.min(row.daily_limit, Math.round(20 * Math.pow(1.2, weeksLive)));
   }
 
   // --- Sending ---
 
   async sendMessage(numberId, to, body, mediaPath) {
-    const client = this.getClient(numberId);
-    if (!client) throw new Error('Number not connected');
+    const sock = this.getClient(numberId);
+    if (!sock) throw new Error('Number not connected');
 
-    const chatId = this._normalizeId(to);
-    let result;
+    const jid = this._normalizeJid(to);
+
     if (mediaPath) {
-      const media = MessageMedia.fromFilePath(mediaPath);
-      result = await client.sendMessage(chatId, media, { caption: body });
+      const buffer = fs.readFileSync(mediaPath);
+      const ext = path.extname(mediaPath).toLowerCase();
+      const isVideo = ['.mp4', '.mov', '.avi', '.mkv'].includes(ext);
+      const isAudio = ['.mp3', '.ogg', '.wav', '.aac'].includes(ext);
+      let content;
+      if (isVideo) content = { video: buffer, caption: body };
+      else if (isAudio) content = { audio: buffer, mimetype: 'audio/mp4', ptt: false };
+      else content = { image: buffer, caption: body };
+      await sock.sendMessage(jid, content);
     } else {
-      result = await client.sendMessage(chatId, body);
+      await sock.sendMessage(jid, { text: body });
     }
 
     this._bumpCounters(numberId);
-    return result;
   }
 
-  _normalizeId(to) {
-    if (to.endsWith('@c.us') || to.endsWith('@g.us')) return to;
-    const digits = to.replace(/[^\d]/g, '');
-    return `${digits}@c.us`;
+  _normalizeJid(to) {
+    if (to.endsWith('@g.us')) return to;
+    if (to.endsWith('@s.whatsapp.net')) return to;
+    if (to.endsWith('@c.us')) return to.replace('@c.us', '@s.whatsapp.net');
+    return `${to.replace(/[^\d]/g, '')}@s.whatsapp.net`;
   }
 
   _bumpCounters(numberId) {
@@ -306,17 +261,14 @@ class WAManager extends EventEmitter {
         .run(numberId);
     }
     const updated = db.prepare('SELECT * FROM numbers WHERE id = ?').get(numberId);
-    const effectiveLimit = this.getEffectiveDailyLimit(updated);
-    const risk = Math.min(100, Math.round((updated.messages_sent_today / Math.max(1, effectiveLimit)) * 100));
+    const risk = Math.min(100, Math.round((updated.messages_sent_today / Math.max(1, this.getEffectiveDailyLimit(updated))) * 100));
     db.prepare('UPDATE numbers SET ban_risk_score = ? WHERE id = ?').run(risk, numberId);
-
-    if (updated.messages_sent_today >= effectiveLimit) {
-      const until = new Date(Date.now() + updated.cooldown_minutes * 60000).toISOString();
-      db.prepare('UPDATE numbers SET cooldown_until = ? WHERE id = ?').run(until, numberId);
+    if (updated.messages_sent_today >= this.getEffectiveDailyLimit(updated)) {
+      db.prepare('UPDATE numbers SET cooldown_until = ? WHERE id = ?')
+        .run(new Date(Date.now() + updated.cooldown_minutes * 60000).toISOString(), numberId);
     }
   }
 
-  /** Picks the next eligible number for auto-rotate sending. */
   pickNextAvailableNumber(preferredId) {
     const today = new Date().toISOString().slice(0, 10);
     const numbers = db.prepare("SELECT * FROM numbers WHERE status = 'connected'").all();
@@ -333,71 +285,55 @@ class WAManager extends EventEmitter {
     return eligible[0];
   }
 
-  // --- Diagnostics ---
-
-  /** Isolates whether a hang is in Puppeteer's CDP transport itself, or specifically
-   * in WhatsApp Web's internal Store object — run this instead of guessing further. */
-  async diagnose(numberId) {
-    const entry = this.clients.get(numberId);
-    if (!entry) return { error: 'no client entry for this number' };
-    if (!entry.client.pupPage) return { entryStatus: entry.status, error: 'page not created yet (still launching Chromium / mid-auth)' };
-    const client = entry.client;
-    const withTimeout = (label, promise, ms = 10000) =>
-      Promise.race([
-        promise.then((value) => ({ label, ok: true, value: typeof value === 'object' ? JSON.stringify(value).slice(0, 200) : value })),
-        new Promise((resolve) => setTimeout(() => resolve({ label, ok: false, value: `timed out after ${ms}ms` }), ms)),
-      ]);
-
-    const results = {};
-    results.entryStatus = entry.status;
-    results.pageUrl = await withTimeout('pageUrl', client.pupPage.evaluate(() => window.location.href));
-    results.basicEvaluate = await withTimeout('basicEvaluate', client.pupPage.evaluate(() => 1 + 1));
-    results.documentTitle = await withTimeout('documentTitle', client.pupPage.evaluate(() => document.title));
-    results.wwebjsExists = await withTimeout('wwebjsExists', client.pupPage.evaluate(() => typeof window.WWebJS !== 'undefined'));
-    results.wwebjsGetChatsExists = await withTimeout('wwebjsGetChatsExists', client.pupPage.evaluate(() => typeof window.WWebJS?.getChats === 'function'));
-    results.storeExists = await withTimeout('storeExists', client.pupPage.evaluate(() => typeof window.Store !== 'undefined'));
-    results.clientState = await withTimeout('clientState', client.getState());
-    if (results.wwebjsGetChatsExists?.value === true) {
-      results.actualGetChatsCount = await withTimeout('actualGetChatsCount', client.pupPage.evaluate(async () => (await window.WWebJS.getChats()).length), 20000);
-    }
-    return results;
-  }
-
   // --- Groups / Communities ---
 
   async fetchGroups(numberId) {
-    const client = this.getClient(numberId);
-    if (!client) return [];
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('getChats() timed out after 45s — WhatsApp Web session may be unresponsive, try reconnecting this number')), 45000));
-    const chats = await Promise.race([client.getChats(), timeout]);
-    const groups = chats.filter((c) => c.isGroup);
+    const sock = this.getClient(numberId);
+    if (!sock) return [];
+
+    // Baileys returns groups you're a member of directly — no getChats() scan needed.
+    const groupsObj = await sock.groupFetchAllParticipating();
+    const groups = Object.values(groupsObj);
+
     db.prepare('DELETE FROM groups_cache WHERE number_id = ?').run(numberId);
     const insert = db.prepare(
       'INSERT INTO groups_cache (number_id, wa_id, name, type, member_count, is_admin, last_activity) VALUES (?,?,?,?,?,?,?)'
     );
+    const myJid = sock.user?.id;
     for (const g of groups) {
-      const isChannel = g.isChannel || false;
+      const isAdmin = g.participants?.some(
+        (p) => (p.id === myJid || p.id?.split(':')[0] + '@s.whatsapp.net' === myJid?.split(':')[0] + '@s.whatsapp.net') &&
+               ['admin', 'superadmin'].includes(p.admin)
+      ) ? 1 : 0;
       insert.run(
         numberId,
-        g.id._serialized,
-        g.name,
-        isChannel ? 'channel' : 'group',
+        g.id,
+        g.subject || 'Unknown Group',
+        'group',
         g.participants?.length || 0,
-        g.groupMetadata?.isAdmin ? 1 : 0,
+        isAdmin,
         new Date().toISOString()
       );
     }
+    console.log(`[WA ${numberId}] fetched ${groups.length} groups`);
     return groups;
   }
 
-  // --- Chatbot ---
+  // --- Chatbot / auto-reply ---
 
-  async handleIncoming(numberId, msg) {
-    if (msg.fromMe) return;
+  async handleIncoming(numberId, sock, msg) {
     const settingRow = db.prepare("SELECT value FROM settings WHERE key = 'auto_reply'").get();
-    if (settingRow && settingRow.value === 'false') return;
+    if (settingRow?.value === 'false') return;
 
-    const body = (msg.body || '').trim().toLowerCase();
+    const body = (
+      msg.message?.conversation ||
+      msg.message?.extendedTextMessage?.text ||
+      msg.message?.imageMessage?.caption ||
+      ''
+    ).trim().toLowerCase();
+
+    if (!body) return;
+
     const flows = db
       .prepare('SELECT * FROM chatbot_flows WHERE enabled = 1 AND (number_id IS NULL OR number_id = ?)')
       .all(numberId);
@@ -407,23 +343,32 @@ class WAManager extends EventEmitter {
     if (!matched) matched = flows.find((f) => f.is_fallback);
 
     if (matched) {
-      const client = this.getClient(numberId);
-      if (client) {
-        const chat = await msg.getChat();
-        await chat.sendStateTyping();
-        await client.sendMessage(msg.from, matched.reply);
-      }
+      const jid = msg.key.remoteJid;
+      await sock.sendPresenceUpdate('composing', jid);
+      await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
+      await sock.sendMessage(jid, { text: matched.reply });
     }
   }
 
-  /** Closes every Chromium instance cleanly. Without this, `docker stop`/redeploys
-   * SIGKILL the Node process and leave orphaned Chromium processes holding each
-   * profile's SingletonLock, which then blocks the next launch attempt entirely. */
+  // --- Diagnostics ---
+
+  async diagnose(numberId) {
+    const entry = this.clients.get(numberId);
+    if (!entry) return { error: 'no client entry for this number' };
+    return {
+      entryStatus: entry.status,
+      wsReadyState: entry.sock?.ws?.readyState,
+      user: entry.sock?.user || null,
+      hasQr: !!entry.qr,
+    };
+  }
+
   async shutdown() {
     console.log(`Shutting down ${this.clients.size} WhatsApp session(s)...`);
-    await Promise.all(
-      [...this.clients.values()].map((entry) => entry.client.destroy().catch(() => {}))
-    );
+    for (const [id] of this.clients) {
+      this._manualDisconnect.add(id);
+      this._destroySocket(id);
+    }
   }
 }
 
