@@ -226,8 +226,23 @@ class WAManager extends EventEmitter {
     const jid = this._normalizeJid(to);
 
     if (mediaPath) {
-      const buffer = fs.readFileSync(mediaPath);
-      const ext = path.extname(mediaPath).toLowerCase();
+      let buffer, ext;
+      if (typeof mediaPath === 'string' && mediaPath.startsWith('http')) {
+        try {
+          const res = await fetch(mediaPath, { signal: AbortSignal.timeout(15000) });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          buffer = Buffer.from(await res.arrayBuffer());
+          ext = path.extname(new URL(mediaPath).pathname).toLowerCase() || '.jpg';
+        } catch (e) {
+          console.warn(`[WA ${numberId}] image download failed (${e.message}) — sending text only`);
+          await sock.sendMessage(jid, { text: body });
+          this._bumpCounters(numberId);
+          return;
+        }
+      } else {
+        buffer = fs.readFileSync(mediaPath);
+        ext = path.extname(mediaPath).toLowerCase();
+      }
       const isVideo = ['.mp4', '.mov', '.avi', '.mkv'].includes(ext);
       const isAudio = ['.mp3', '.ogg', '.wav', '.aac'].includes(ext);
       let content;

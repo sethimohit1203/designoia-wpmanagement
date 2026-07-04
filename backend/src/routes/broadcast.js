@@ -29,7 +29,7 @@ router.post('/send-now', async (req, res) => {
     to = contact?.phone;
   }
   try {
-    await wa.sendMessage(number_id, to, body);
+    await wa.sendMessage(number_id, to, body, product.image_url || null);
     db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(product_id);
     res.json({ ok: true });
   } catch (e) {
@@ -58,7 +58,7 @@ router.post('/batch-send', async (req, res) => {
       }
     }
     try {
-      await wa.sendMessage(number_id, to, formatProductMessage(product, aiBody));
+      await wa.sendMessage(number_id, to, formatProductMessage(product, aiBody), product.image_url || null);
       db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(pid);
       results.push({ pid, ok: true });
     } catch (e) {

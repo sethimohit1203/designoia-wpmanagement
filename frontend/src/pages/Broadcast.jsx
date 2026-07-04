@@ -58,7 +58,13 @@ export default function Broadcast() {
               </label>
               {p.image_url && <img src={p.image_url} className="rounded-lg h-28 w-full object-cover my-2" />}
               <div className="font-medium text-sm">{p.product_name}</div>
-              <div className="text-sm">Rs.{p.price} {p.discount ? <span className="text-red-600">({p.discount}% off)</span> : null}</div>
+              <div className="text-sm flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-green-700">₹{p.price}</span>
+                {p.mrp && p.mrp > p.price && (
+                  <span className="text-gray-400 line-through text-xs">₹{p.mrp}</span>
+                )}
+                {p.discount ? <span className="text-red-600 text-xs">({Math.round(p.discount)}% off)</span> : null}
+              </div>
             </div>
           ))}
         </div>

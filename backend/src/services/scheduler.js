@@ -125,12 +125,18 @@ function formatProductMessage(product, aiBody) {
   const lines = [];
   lines.push(`✨ ${product.product_name} ✨`, '');
 
-  const body = aiBody || [product.brand, product.description].filter(Boolean).join(' — ');
+  // Use AI body, or the full description from the sheet, or brand as last resort
+  const body = aiBody || product.description || product.brand || '';
   if (body) lines.push(body, '');
 
-  const priceParts = [`💰 Price: ₹${product.price}`];
-  if (product.mrp) priceParts.push(`~₹${product.mrp}~`);
-  if (product.discount) priceParts.push(`(${product.discount}% off)`);
+  // Price: show selling price + crossed-out MRP if available
+  const price = product.price;
+  const mrp = product.mrp;
+  const priceParts = [`💰 Price: ₹${price}`];
+  if (mrp && Number(mrp) > Number(price)) {
+    priceParts.push(`~₹${mrp}~`);
+    if (product.discount) priceParts.push(`(${Math.round(product.discount)}% off)`);
+  }
   lines.push(priceParts.join(' '), '');
 
   const footerNote = getSetting('broadcast_footer_note', '');
@@ -148,7 +154,7 @@ function formatProductMessage(product, aiBody) {
     lines.push('');
   }
 
-  if (product.product_url) lines.push(`Buy Now: ${product.product_url}`);
+  // product_url intentionally omitted — no external marketplace links in messages
 
   return lines.join('\n').trim();
 }
