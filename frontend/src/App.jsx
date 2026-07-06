@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './layout/Layout';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Numbers from './pages/Numbers';
 import BulkSender from './pages/BulkSender';
@@ -14,6 +16,10 @@ import Broadcast from './pages/Broadcast';
 import Settings from './pages/Settings';
 
 export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('auth') === '1');
+
+  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
+
   return (
     <Routes>
       <Route element={<Layout />}>
