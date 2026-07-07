@@ -168,7 +168,7 @@ export default function AutoBroadcast() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-gray-600 block mb-1">Target Type</label>
-                    <select className="input" value={form.target_type} onChange={(e) => setForm((f) => ({ ...f, target_type: e.target.value, target_id: '' })}>
+                    <select className="input" value={form.target_type} onChange={(e) => setForm((f) => ({ ...f, target_type: e.target.value, target_id: '' }))}>
                       <option value="group">WhatsApp Group</option>
                       <option value="channel">Community Channel</option>
                       <option value="contact">Individual Contact</option>
