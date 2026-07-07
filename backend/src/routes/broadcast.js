@@ -28,6 +28,7 @@ router.post('/send-now', async (req, res) => {
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(target_id);
     to = contact?.phone;
   }
+  if (!to) return res.status(404).json({ error: 'Target not found or has no phone number' });
   try {
     await wa.sendMessage(number_id, to, body, product.image_url || null);
     db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(product_id);
@@ -40,34 +41,44 @@ router.post('/send-now', async (req, res) => {
 
 router.post('/batch-send', async (req, res) => {
   const { product_ids, number_id, target_type, target_id, delay_seconds = 10, use_ai = true } = req.body;
-  const results = [];
-  for (const pid of product_ids) {
-    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
-    if (!product) continue;
-    let to = target_id;
-    if (target_type === 'contact') {
-      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(target_id);
-      to = contact?.phone;
-    }
-    let aiBody;
-    if (use_ai) {
+
+  // Resolve target once — same logic for every product in the batch
+  let to = target_id;
+  if (target_type === 'contact') {
+    const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(target_id);
+    to = contact?.phone;
+  }
+  if (!to) return res.status(404).json({ error: 'Target not found or has no phone number' });
+
+  // Respond immediately so proxies don't time out — the batch runs asynchronously
+  res.json({ ok: true, queued: product_ids.length });
+
+  (async () => {
+    for (let i = 0; i < product_ids.length; i++) {
+      const pid = product_ids[i];
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
+      if (!product) continue;
+      let aiBody;
+      if (use_ai) {
+        try {
+          aiBody = await ai.generateProductCaption(product);
+        } catch (e) {
+          console.warn(`AI caption failed for product ${pid}, falling back to plain template:`, e.message);
+        }
+      }
       try {
-        aiBody = await ai.generateProductCaption(product);
+        await wa.sendMessage(number_id, to, formatProductMessage(product, aiBody), product.image_url || null);
+        db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(pid);
       } catch (e) {
-        console.warn(`AI caption failed for product ${pid}, falling back to plain template:`, e.message);
+        db.prepare("UPDATE products SET status='Failed' WHERE id = ?").run(pid);
+        console.error(`Batch send failed for product ${pid}:`, e.message);
+      }
+      // No delay after the last product
+      if (i < product_ids.length - 1) {
+        await new Promise((r) => setTimeout(r, Number(delay_seconds) * 1000));
       }
     }
-    try {
-      await wa.sendMessage(number_id, to, formatProductMessage(product, aiBody), product.image_url || null);
-      db.prepare("UPDATE products SET status='Sent' WHERE id = ?").run(pid);
-      results.push({ pid, ok: true });
-    } catch (e) {
-      db.prepare("UPDATE products SET status='Failed' WHERE id = ?").run(pid);
-      results.push({ pid, ok: false, error: e.message });
-    }
-    await new Promise((r) => setTimeout(r, Number(delay_seconds) * 1000));
-  }
-  res.json({ results });
+  })().catch((e) => console.error('Batch send fatal error:', e.message));
 });
 
 router.post('/schedule', (req, res) => {

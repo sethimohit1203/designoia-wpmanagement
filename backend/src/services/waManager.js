@@ -243,9 +243,11 @@ class WAManager extends EventEmitter {
           if (!ct.startsWith('image/')) throw new Error(`Not an image (content-type: ${ct})`);
           buffer = Buffer.from(await res.arrayBuffer());
           if (buffer.length < 500) throw new Error(`Image too small (${buffer.length} B) — likely blocked`);
-          // Convert any format (webp, png, etc.) to JPEG — WhatsApp reliably
-          // accepts JPEG; webp sent as-is causes "wrong image file" errors.
-          buffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+          // Convert non-JPEG images (webp, png…) to JPEG for WhatsApp compatibility.
+          // Skip re-encoding if the server already returned JPEG — avoids lossy round-trips.
+          if (!ct.includes('jpeg') && !ct.includes('jpg')) {
+            buffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
+          }
           ext = '.jpg';
         } catch (e) {
           console.warn(`[WA ${numberId}] image download failed (${e.message}) — sending text only`);
@@ -254,7 +256,7 @@ class WAManager extends EventEmitter {
           return;
         }
       } else {
-        buffer = fs.readFileSync(mediaPath);
+        buffer = await fs.promises.readFile(mediaPath);
         ext = path.extname(mediaPath).toLowerCase();
         if (['.webp', '.png', '.gif'].includes(ext)) {
           buffer = await sharp(buffer).jpeg({ quality: 85 }).toBuffer();
@@ -278,6 +280,7 @@ class WAManager extends EventEmitter {
   }
 
   _normalizeJid(to) {
+    if (!to || typeof to !== 'string') throw new Error(`Invalid send target: expected a phone number or JID, got ${JSON.stringify(to)}`);
     if (to.endsWith('@g.us')) return to;
     if (to.endsWith('@s.whatsapp.net')) return to;
     if (to.endsWith('@c.us')) return to.replace('@c.us', '@s.whatsapp.net');

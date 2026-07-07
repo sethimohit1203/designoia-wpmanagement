@@ -107,7 +107,7 @@ async function checkSheetSchedules() {
     for (const product of due) {
       const body = formatProductMessage(product);
       try {
-        await wa.sendMessage(numberId, to, body);
+        await wa.sendMessage(numberId, to, body, product.image_url || null);
         db.prepare("UPDATE products SET status = 'Sent' WHERE id = ?").run(product.id);
         await writeStatus(config, product.row_index, 'Sent').catch(() => {});
       } catch (err) {
@@ -125,8 +125,10 @@ function formatProductMessage(product, aiBody) {
   const lines = [];
   lines.push(`✨ ${product.product_name} ✨`, '');
 
-  // Use AI body, or the full description from the sheet, or brand as last resort
-  const body = aiBody || product.description || product.brand || '';
+  // Strip =AI() formula strings that survived into the DB before the sheetsService guard.
+  const rawDesc = product.description || '';
+  const desc = rawDesc.startsWith('=') ? '' : rawDesc;
+  const body = aiBody || desc || product.brand || '';
   if (body) lines.push(body, '');
 
   // Price block: offer price, MRP struck-through, discount %

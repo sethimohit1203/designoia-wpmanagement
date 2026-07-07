@@ -143,6 +143,11 @@ async function syncSheet(config) {
 
   db.prepare('UPDATE sheets_config SET column_map = ? WHERE id = ?').run(JSON.stringify(columnMap), config.id);
 
+  // Strips Google Sheets formula strings (cells starting with '=') that the API
+  // returns literally — e.g. =AI(), =A2*0.9. Applies to all fields so formula
+  // text never ends up in prices or descriptions.
+  const stripFormula = (v) => { const s = String(v ?? ''); return s.startsWith('=') ? '' : s; };
+
   rows.forEach((row, idx) => {
     const rowIndex = idx + 2; // 1-based, header is row 1
     const get = (field) => (columnMap[field] !== undefined ? row[columnMap[field]] : undefined);
@@ -152,14 +157,11 @@ async function syncSheet(config) {
       row_index: rowIndex,
       product_name: get('product_name') || '',
       brand: get('brand') || '',
-      price: parseFloat(get('price')) || 0,
-      mrp: parseFloat(get('mrp')) || 0,
-      discount: parseFloat(String(get('discount') || '').replace('%', '')) || 0,
+      price: parseFloat(stripFormula(get('price'))) || 0,
+      mrp: parseFloat(stripFormula(get('mrp'))) || 0,
+      discount: parseFloat(stripFormula(get('discount')).replace('%', '')) || 0,
       image_url: get('image_url') || '',
-      // =AI() is a client-side Google Workspace Labs function — the API always
-      // returns the raw formula string, never the computed result. Treat those
-      // cells as empty so the formula text doesn't end up in WhatsApp messages.
-      description: (() => { const d = get('description') || ''; return d.startsWith('=') ? '' : d; })(),
+      description: stripFormula(get('description')),
       product_url: get('product_url') || '',
       schedule_date: get('schedule_date') || '',
       status: get('status') || 'Pending',
