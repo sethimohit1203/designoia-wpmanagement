@@ -133,6 +133,20 @@ CREATE TABLE IF NOT EXISTS groups_cache (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS group_member_queues (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  number_id INTEGER NOT NULL,
+  group_id TEXT NOT NULL,
+  contact_ids TEXT NOT NULL DEFAULT '[]',
+  current_index INTEGER DEFAULT 0,
+  members_per_day INTEGER DEFAULT 10,
+  frequency_days INTEGER DEFAULT 1,
+  next_send_at TEXT,
+  status TEXT DEFAULT 'active',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT

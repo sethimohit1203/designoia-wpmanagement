@@ -20,6 +20,7 @@ app.use('/api/sheets', require('./routes/sheets'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/broadcast', require('./routes/broadcast'));
 app.use('/api/broadcast-queue', require('./routes/broadcastQueue'));
+app.use('/api/member-queue', require('./routes/memberQueue'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'designoia-wpmanagement-backend' }));
 

@@ -229,15 +229,55 @@ async function checkBroadcastQueues() {
   }
 }
 
+async function checkMemberQueues() {
+  const today = new Date().toISOString().slice(0, 10);
+  const queues = db.prepare("SELECT * FROM group_member_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
+
+  for (const q of queues) {
+    const contactIds = JSON.parse(q.contact_ids || '[]');
+    if (!contactIds.length) continue;
+
+    let idx = q.current_index || 0;
+    const batch = [];
+    for (let i = 0; i < q.members_per_day; i++) {
+      if (idx >= contactIds.length) break; // all contacts processed
+      const cid = contactIds[idx];
+      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(cid);
+      if (contact?.phone) {
+        batch.push(contact.phone.replace(/\D/g, '') + '@s.whatsapp.net');
+      }
+      idx++;
+    }
+
+    if (batch.length) {
+      try {
+        await wa.addGroupMembers(q.number_id, q.group_id, batch);
+        console.log(`[MemberQueue ${q.id}] "${q.name}" added ${batch.length} members`);
+      } catch (e) {
+        console.error(`[MemberQueue ${q.id}] failed:`, e.message);
+      }
+    }
+
+    const allDone = idx >= contactIds.length;
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+    db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
+      .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
+
+    if (allDone) console.log(`[MemberQueue ${q.id}] "${q.name}" all contacts added — marked completed`);
+  }
+}
+
 function start() {
   // Hourly: sheet schedule-date check + broadcast queues
   cron.schedule('0 * * * *', () => checkSheetSchedules().catch(console.error));
-  cron.schedule('0 * * * *', () => checkBroadcastQueues().catch(console.error)); // every hour, checks send_time per queue
+  cron.schedule('0 * * * *', () => checkBroadcastQueues().catch(console.error));
   // Every minute: scheduled campaigns
   cron.schedule('* * * * *', () => checkScheduledCampaigns().catch(console.error));
-  // Midnight: reset daily counters (also lazily handled in waManager, this is a safety net)
+  // Daily at midnight IST: member queues + reset counters
   cron.schedule('0 0 * * *', () => {
     db.prepare("UPDATE numbers SET messages_sent_today = 0, cooldown_until = NULL").run();
+    checkMemberQueues().catch(console.error);
   });
 }
 

@@ -11,5 +11,6 @@ export const navItems = [
   { to: '/groups', label: 'Groups', icon: '👨‍👩‍👧' },
   { to: '/broadcast', label: 'Broadcast', icon: '📦' },
   { to: '/auto-broadcast', label: 'Auto Broadcast', icon: '📅' },
+  { to: '/add-members', label: 'Add Members', icon: '➕' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];

@@ -372,6 +372,13 @@ class WAManager extends EventEmitter {
     return groups;
   }
 
+  async addGroupMembers(numberId, groupId, participantJids) {
+    const sock = this.getClient(numberId);
+    if (!sock) throw new Error('Number not connected');
+    const result = await sock.groupParticipantsUpdate(groupId, participantJids, 'add');
+    return result;
+  }
+
   // --- Chatbot / auto-reply ---
 
   async handleIncoming(numberId, sock, msg) {

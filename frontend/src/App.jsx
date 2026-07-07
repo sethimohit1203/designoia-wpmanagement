@@ -14,6 +14,7 @@ import Sheets from './pages/Sheets';
 import Groups from './pages/Groups';
 import Broadcast from './pages/Broadcast';
 import AutoBroadcast from './pages/AutoBroadcast';
+import AddMembers from './pages/AddMembers';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/groups" element={<Groups />} />
         <Route path="/broadcast" element={<Broadcast />} />
         <Route path="/auto-broadcast" element={<AutoBroadcast />} />
+        <Route path="/add-members" element={<AddMembers />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
