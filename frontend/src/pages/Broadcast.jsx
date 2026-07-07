@@ -80,26 +80,51 @@ export default function Broadcast() {
               ? <option disabled>No contacts — add via Contacts page</option>
               : contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
           </select>
+        ) : !numberId ? (
+          <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">← Select a number first</div>
+        ) : groups.length === 0 ? (
+          <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">No groups found — go to Groups page and refresh</div>
         ) : (
-          <select className="input" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-            <option value="">
-              {!numberId ? '← Select a number first' : groups.length === 0 ? 'No groups found — refresh on Groups page' : 'Select group or channel'}
-            </option>
+          <div className="border border-gray-200 rounded-lg divide-y max-h-48 overflow-y-auto">
             {groups.filter((g) => g.type !== 'channel').length > 0 && (
-              <optgroup label="👥 Groups">
+              <>
+                <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider sticky top-0">👥 Groups</div>
                 {groups.filter((g) => g.type !== 'channel').map((g) => (
-                  <option key={g.wa_id} value={g.wa_id}>{g.name} ({g.member_count} members)</option>
+                  <button
+                    key={g.wa_id}
+                    type="button"
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${targetId === g.wa_id ? 'bg-teal-50' : 'hover:bg-gray-50'}`}
+                    onClick={() => setTargetId(g.wa_id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{g.name}</div>
+                      <div className="text-xs text-gray-400">{g.member_count} members</div>
+                    </div>
+                    {targetId === g.wa_id && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
+                  </button>
                 ))}
-              </optgroup>
+              </>
             )}
             {groups.filter((g) => g.type === 'channel').length > 0 && (
-              <optgroup label="📢 Channels">
+              <>
+                <div className="px-3 py-1 bg-purple-50 text-[10px] font-semibold text-purple-600 uppercase tracking-wider sticky top-0">📢 Channels</div>
                 {groups.filter((g) => g.type === 'channel').map((g) => (
-                  <option key={g.wa_id} value={g.wa_id}>{g.name} ({g.member_count} followers)</option>
+                  <button
+                    key={g.wa_id}
+                    type="button"
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${targetId === g.wa_id ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+                    onClick={() => setTargetId(g.wa_id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{g.name}</div>
+                      <div className="text-xs text-gray-400">{g.member_count} followers</div>
+                    </div>
+                    {targetId === g.wa_id && <span className="text-purple-500 text-sm flex-shrink-0">✓</span>}
+                  </button>
                 ))}
-              </optgroup>
+              </>
             )}
-          </select>
+          </div>
         )}
 
         {/* Selected product info */}
