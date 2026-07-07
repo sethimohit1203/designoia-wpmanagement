@@ -5,6 +5,80 @@ const multer = require('multer');
 const { uploadsDir } = require('../utils/paths');
 const upload = multer({ dest: uploadsDir });
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
+
+// Proper CSV row parser — handles quoted fields containing commas/newlines
+function parseCsvRow(line) {
+  const cols = [];
+  let cur = '';
+  let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      cols.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
+// Find column index by trying multiple common header names
+function findCol(header, ...names) {
+  for (const n of names) {
+    const idx = header.findIndex((h) => h.replace(/[^a-z0-9]/g, '').includes(n.replace(/[^a-z0-9]/g, '')));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function importRows(lines) {
+  const header = parseCsvRow(lines[0]).map((h) => h.toLowerCase());
+  const nameIdx  = findCol(header, 'name', 'fullname', 'contactname');
+  const phoneIdx = findCol(header, 'phone', 'mobile', 'number', 'phonenumber', 'mobilenumber', 'whatsapp');
+  const groupIdx = findCol(header, 'group', 'groupname', 'category', 'list');
+  const tagsIdx  = findCol(header, 'tags', 'tag', 'label');
+
+  if (phoneIdx === -1) throw new Error('Could not find a phone/mobile column in the CSV/sheet. Make sure a column is named "Phone", "Mobile", or "Number".');
+
+  const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, phone, group_name, tags) VALUES (?,?,?,?)');
+  let count = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = parseCsvRow(line);
+    const phone = cols[phoneIdx]?.replace(/[^\d+]/g, '');
+    if (!phone || phone.length < 7) continue;
+    insert.run(
+      nameIdx  !== -1 ? cols[nameIdx]  || 'Unknown' : 'Unknown',
+      phone,
+      groupIdx !== -1 ? cols[groupIdx] || 'All' : 'All',
+      tagsIdx  !== -1 ? cols[tagsIdx]  || '' : ''
+    );
+    count++;
+  }
+  return count;
+}
+
+function fetchUrl(url) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? https : http;
+    lib.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchUrl(res.headers.location).then(resolve).catch(reject);
+      }
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
 
 router.get('/', (req, res) => {
   const { search, group, status } = req.query;
@@ -41,24 +115,46 @@ router.post('/', (req, res) => {
 
 router.post('/import-csv', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
-  const content = fs.readFileSync(req.file.path, 'utf8');
-  const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
-  const header = lines[0].toLowerCase().split(',').map((h) => h.trim());
-  const nameIdx = header.indexOf('name');
-  const phoneIdx = header.indexOf('phone');
-  const groupIdx = header.indexOf('group');
-  const tagsIdx = header.indexOf('tags');
-
-  const insert = db.prepare('INSERT INTO contacts (name, phone, group_name, tags) VALUES (?,?,?,?)');
-  let count = 0;
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',').map((c) => c.trim());
-    if (!cols[phoneIdx]) continue;
-    insert.run(cols[nameIdx] || 'Unknown', cols[phoneIdx], cols[groupIdx] || 'All', cols[tagsIdx] || '');
-    count++;
+  try {
+    const content = fs.readFileSync(req.file.path, 'utf8');
+    fs.unlinkSync(req.file.path);
+    const lines = content.split('\n').filter((l) => l.trim());
+    const count = importRows(lines);
+    res.json({ imported: count });
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(400).json({ error: e.message });
   }
-  fs.unlinkSync(req.file.path);
-  res.json({ imported: count });
+});
+
+// Import contacts from a Google Sheets URL (must be publicly shared)
+router.post('/import-sheet', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  try {
+    // Extract sheet ID and convert to CSV export URL
+    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (!match) return res.status(400).json({ error: 'Invalid Google Sheets URL' });
+    const sheetId = match[1];
+
+    // Support ?gid= for specific tab
+    const gidMatch = url.match(/[?&#]gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+    const csv = await fetchUrl(csvUrl);
+
+    if (!csv || csv.includes('Sign in') || csv.includes('<html')) {
+      return res.status(400).json({ error: 'Sheet is not publicly accessible. Set sharing to "Anyone with the link can view".' });
+    }
+
+    const lines = csv.split('\n').filter((l) => l.trim());
+    const count = importRows(lines);
+    res.json({ imported: count });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.put('/:id', (req, res) => {

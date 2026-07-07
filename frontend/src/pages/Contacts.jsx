@@ -8,6 +8,8 @@ export default function Contacts() {
   const [group, setGroup] = useState('All');
   const [selected, setSelected] = useState([]);
   const [form, setForm] = useState({ name: '', phone: '', group_name: 'All', tags: '' });
+  const [sheetUrl, setSheetUrl] = useState('');
+  const [showSheetInput, setShowSheetInput] = useState(false);
   const qc = useQueryClient();
 
   const { data: contacts = [] } = useQuery({
@@ -56,6 +58,18 @@ export default function Contacts() {
     onError: onErr,
   });
 
+  const importSheet = useMutation({
+    mutationFn: () => api.post('/contacts/import-sheet', { url: sheetUrl }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['contacts'] });
+      qc.invalidateQueries({ queryKey: ['contact-groups'] });
+      toast.success(`Imported ${res.data.imported} contacts from sheet`);
+      setSheetUrl('');
+      setShowSheetInput(false);
+    },
+    onError: onErr,
+  });
+
   const toggleSelect = (id) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
@@ -80,17 +94,46 @@ export default function Contacts() {
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input className="input" placeholder="Search name/phone" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <label className="btn-secondary cursor-pointer">
-            Import CSV
+          <label className="btn-secondary cursor-pointer whitespace-nowrap">
+            📂 Import CSV
             <input type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files[0] && importCsv.mutate(e.target.files[0])} />
           </label>
+          <button className="btn-secondary whitespace-nowrap" onClick={() => setShowSheetInput((v) => !v)}>
+            📊 From Google Sheet
+          </button>
           {selected.length > 0 && (
             <button className="btn-secondary text-red-600" onClick={() => bulkDelete.mutate()}>Delete ({selected.length})</button>
           )}
         </div>
       </div>
+
+      {/* Google Sheet import panel */}
+      {showSheetInput && (
+        <div className="card space-y-2">
+          <p className="text-sm font-medium">Import from Google Sheet</p>
+          <p className="text-xs text-gray-500">
+            Make sure the sheet is shared as <strong>"Anyone with the link can view"</strong>.
+            Columns needed: <code className="bg-gray-100 px-1 rounded">Name</code>, <code className="bg-gray-100 px-1 rounded">Phone</code> (or Mobile/Number), optionally <code className="bg-gray-100 px-1 rounded">Group</code>, <code className="bg-gray-100 px-1 rounded">Tags</code>.
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="input flex-1"
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+            />
+            <button
+              className="btn-primary whitespace-nowrap"
+              disabled={!sheetUrl.trim() || importSheet.isPending}
+              onClick={() => importSheet.mutate()}
+            >
+              {importSheet.isPending ? 'Importing…' : 'Import'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
