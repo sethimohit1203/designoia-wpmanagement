@@ -9,6 +9,7 @@ export default function Groups() {
   const [selected, setSelected] = useState([]);
   const [message, setMessage] = useState('');
   const [delay, setDelay] = useState(15);
+  const [channelLink, setChannelLink] = useState('');
 
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
   const { data: groups = [] } = useQuery({
@@ -21,6 +22,16 @@ export default function Groups() {
     mutationFn: () => api.post(`/groups/refresh/${numberId}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['groups'] }); toast.success('Groups refreshed'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed - connect number first'),
+  });
+
+  const addChannel = useMutation({
+    mutationFn: () => api.post('/groups/add-channel', { number_id: Number(numberId), link_or_jid: channelLink.trim() }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['groups'] });
+      toast.success(`Channel "${r.data.name}" added!`);
+      setChannelLink('');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to add channel'),
   });
 
   const send = useMutation({
@@ -43,6 +54,27 @@ export default function Groups() {
           </select>
         </div>
         <button className="btn-secondary" disabled={!numberId} onClick={() => refresh.mutate()}>Refresh Groups</button>
+      </div>
+
+      {/* Add Channel manually */}
+      <div className="card space-y-2">
+        <h2 className="font-semibold text-sm">📢 Add WhatsApp Channel</h2>
+        <p className="text-xs text-gray-500">Paste your WhatsApp Channel invite link (e.g. <span className="font-mono">https://whatsapp.com/channel/…</span>)</p>
+        <div className="flex gap-2">
+          <input
+            className="input flex-1"
+            placeholder="https://whatsapp.com/channel/0029Va..."
+            value={channelLink}
+            onChange={(e) => setChannelLink(e.target.value)}
+          />
+          <button
+            className="btn-primary whitespace-nowrap"
+            disabled={!numberId || !channelLink.trim() || addChannel.isPending}
+            onClick={() => addChannel.mutate()}
+          >
+            {addChannel.isPending ? 'Adding…' : 'Add Channel'}
+          </button>
+        </div>
       </div>
 
       <div className="card">
