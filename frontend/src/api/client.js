@@ -5,6 +5,6 @@ import axios from 'axios';
 // e.g. https://your-backend.up.railway.app/api
 const baseURL = import.meta.env.VITE_API_URL || '/api';
 
-const api = axios.create({ baseURL });
+const api = axios.create({ baseURL, timeout: 180000 });
 
 export default api;

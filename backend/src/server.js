@@ -33,6 +33,9 @@ const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`Designoia-WPManagement backend running on http://localhost:${PORT}`);
 });
+// Large sheet imports can take 60–90 s — raise timeout so the connection
+// doesn't drop mid-import.
+server.timeout = 180000;
 
 // `docker stop` sends SIGTERM. Without this, Node exits immediately and leaves
 // orphaned Chromium processes holding each session's SingletonLock, breaking

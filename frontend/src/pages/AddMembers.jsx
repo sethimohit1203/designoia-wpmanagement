@@ -27,7 +27,8 @@ export default function AddMembers() {
 
   const { data: queues = [] } = useQuery({ queryKey: ['member-queues'], queryFn: () => api.get('/member-queue').then((r) => r.data) });
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
-  const { data: contacts = [] } = useQuery({ queryKey: ['contacts'], queryFn: () => api.get('/contacts').then((r) => r.data) });
+  const { data: contactsData } = useQuery({ queryKey: ['contacts', '', 'All', 1], queryFn: () => api.get('/contacts', { params: { limit: 500 } }).then((r) => r.data) });
+  const contacts = contactsData?.rows || [];
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', form.number_id],
     queryFn: () => api.get('/groups', { params: { number_id: form.number_id } }).then((r) => r.data),

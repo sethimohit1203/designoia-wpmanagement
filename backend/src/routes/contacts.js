@@ -79,8 +79,8 @@ function importRows(lines) {
   const cityIdx  = findCol(header, 'city', 'district', 'state');
 
   const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, phone, group_name, tags) VALUES (?,?,?,?)');
-  let count = 0;
 
+  const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -89,7 +89,6 @@ function importRows(lines) {
     const phone = pickPhone(cols, phoneIdxs);
     if (!phone) continue;
 
-    // Build name
     let name = '';
     if (fnameIdx !== -1 || mnameIdx !== -1 || lnameIdx !== -1) {
       name = [cols[nameIdx], cols[fnameIdx], cols[mnameIdx], cols[lnameIdx]]
@@ -100,11 +99,13 @@ function importRows(lines) {
 
     const group = groupIdx !== -1 ? cols[groupIdx]?.trim() || 'All' : 'All';
     const tags  = tagsIdx  !== -1 ? cols[tagsIdx]?.trim()  || ''    : '';
-
-    insert.run(name, phone, group, tags);
-    count++;
+    rows.push([name, phone, group, tags]);
   }
-  return count;
+
+  // Wrap in a transaction — turns 64k individual inserts into one fast batch
+  const insertMany = db.transaction((batch) => { for (const r of batch) insert.run(...r); });
+  insertMany(rows);
+  return rows.length;
 }
 
 function fetchUrl(url, redirects = 0) {
@@ -129,23 +130,20 @@ function fetchUrl(url, redirects = 0) {
 }
 
 router.get('/', (req, res) => {
-  const { search, group, status } = req.query;
-  let query = 'SELECT * FROM contacts WHERE 1=1';
+  const { search, group, status, page = 1, limit = 100 } = req.query;
+  const offset = (Number(page) - 1) * Number(limit);
+
+  let where = 'WHERE 1=1';
   const params = [];
-  if (search) {
-    query += ' AND (name LIKE ? OR phone LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
-  }
-  if (group && group !== 'All') {
-    query += ' AND group_name = ?';
-    params.push(group);
-  }
-  if (status) {
-    query += ' AND status = ?';
-    params.push(status);
-  }
-  query += ' ORDER BY id DESC';
-  res.json(db.prepare(query).all(...params));
+  if (search) { where += ' AND (name LIKE ? OR phone LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  if (group && group !== 'All') { where += ' AND group_name = ?'; params.push(group); }
+  if (status) { where += ' AND status = ?'; params.push(status); }
+
+  const total = db.prepare(`SELECT COUNT(*) as n FROM contacts ${where}`).get(...params).n;
+  const rows  = db.prepare(`SELECT * FROM contacts ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+    .all(...params, Number(limit), offset);
+
+  res.json({ rows, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
 });
 
 router.get('/groups', (req, res) => {
