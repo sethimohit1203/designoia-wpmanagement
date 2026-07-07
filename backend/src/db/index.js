@@ -163,6 +163,9 @@ if (!broadcastQueueCols.includes('send_time')) {
 if (!broadcastQueueCols.includes('target_ids')) {
   db.exec("ALTER TABLE broadcast_queues ADD COLUMN target_ids TEXT DEFAULT '[]'");
 }
+if (!broadcastQueueCols.includes('send_times')) {
+  db.exec("ALTER TABLE broadcast_queues ADD COLUMN send_times TEXT DEFAULT '[]'");
+}
 const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().map((c) => c.name);
 if (!sheetsConfigCols.includes('column_map')) {
   db.exec("ALTER TABLE sheets_config ADD COLUMN column_map TEXT DEFAULT '{}'");

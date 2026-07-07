@@ -7,7 +7,7 @@ export default function Broadcast() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [numberId, setNumberId] = useState('');
   const [targetType, setTargetType] = useState('group');
-  const [targetId, setTargetId] = useState('');
+  const [targetIds, setTargetIds] = useState([]);
   const [caption, setCaption] = useState('');
   const [batchIds, setBatchIds] = useState([]);
   const [showPanel, setShowPanel] = useState(false);
@@ -28,14 +28,21 @@ export default function Broadcast() {
   });
 
   const sendNow = useMutation({
-    mutationFn: () => api.post('/broadcast/send-now', {
-      product_id: selectedProduct.id,
-      number_id: Number(numberId),
-      target_type: targetType,
-      target_id: targetType === 'contact' ? Number(targetId) : targetId,
-      caption,
-    }),
-    onSuccess: () => { toast.success('Sent!'); setShowPanel(false); },
+    mutationFn: async () => {
+      const resolvedTargets = targetType === 'contact'
+        ? targetIds.map(Number)
+        : targetIds;
+      for (const tid of resolvedTargets) {
+        await api.post('/broadcast/send-now', {
+          product_id: selectedProduct.id,
+          number_id: Number(numberId),
+          target_type: targetType,
+          target_id: tid,
+          caption,
+        });
+      }
+    },
+    onSuccess: () => { toast.success(`Sent to ${targetIds.length} target(s)!`); setShowPanel(false); },
     onError: (e) => toast.error(e.response?.data?.error || 'Send failed'),
   });
 
@@ -44,20 +51,82 @@ export default function Broadcast() {
       product_ids: batchIds,
       number_id: Number(numberId),
       target_type: targetType,
-      target_id: targetType === 'contact' ? Number(targetId) : targetId,
+      target_ids: targetType === 'contact' ? targetIds.map(Number) : targetIds,
     }),
-    onSuccess: () => { toast.success(`Sending ${batchIds.length} products in background…`); setBatchIds([]); setShowPanel(false); },
+    onSuccess: () => { toast.success(`Sending ${batchIds.length} products to ${targetIds.length} target(s)…`); setBatchIds([]); setShowPanel(false); },
     onError: (e) => toast.error(e.response?.data?.error || 'Batch send failed'),
   });
 
   const toggleBatch = (id) => setBatchIds((b) => (b.includes(id) ? b.filter((x) => x !== id) : [...b, id]));
-  const canSend = numberId && targetId;
+  const toggleTarget = (id) => setTargetIds((t) => (t.includes(id) ? t.filter((x) => x !== id) : [...t, id]));
+  const canSend = numberId && targetIds.length > 0;
+
+  const wGroups = groups.filter((g) => g.type !== 'channel');
+  const wChannels = groups.filter((g) => g.type === 'channel');
+
+  function TargetList() {
+    if (!numberId) return <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">← Select a number first</div>;
+    if (groups.length === 0) return <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">No groups found — go to Groups page and refresh</div>;
+    return (
+      <div className="border border-gray-200 rounded-lg divide-y max-h-52 overflow-y-auto">
+        {wGroups.length > 0 && (
+          <>
+            <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">👥 Groups</div>
+            {wGroups.map((g) => (
+              <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(g.wa_id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+                <input type="checkbox" checked={targetIds.includes(g.wa_id)} onChange={() => toggleTarget(g.wa_id)} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{g.name}</div>
+                  <div className="text-xs text-gray-400">{g.member_count} members</div>
+                </div>
+                {targetIds.includes(g.wa_id) && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
+              </label>
+            ))}
+          </>
+        )}
+        {wChannels.length > 0 && (
+          <>
+            <div className="px-3 py-1 bg-purple-50 text-[10px] font-semibold text-purple-600 uppercase tracking-wider">📢 Channels</div>
+            {wChannels.map((g) => (
+              <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(g.wa_id) ? 'bg-purple-50' : 'hover:bg-gray-50'}`}>
+                <input type="checkbox" checked={targetIds.includes(g.wa_id)} onChange={() => toggleTarget(g.wa_id)} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{g.name}</div>
+                  <div className="text-xs text-gray-400">{g.member_count} followers</div>
+                </div>
+                {targetIds.includes(g.wa_id) && <span className="text-purple-500 text-sm flex-shrink-0">✓</span>}
+              </label>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function ContactList() {
+    return (
+      <div className="border border-gray-200 rounded-lg divide-y max-h-52 overflow-y-auto">
+        {contacts.length === 0
+          ? <div className="p-3 text-sm text-gray-400">No contacts — add via Contacts page</div>
+          : contacts.map((c) => (
+            <label key={c.id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(String(c.id)) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+              <input type="checkbox" checked={targetIds.includes(String(c.id))} onChange={() => toggleTarget(String(c.id))} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{c.name}</div>
+                <div className="text-xs text-gray-400">{c.phone}</div>
+              </div>
+              {targetIds.includes(String(c.id)) && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
+            </label>
+          ))}
+      </div>
+    );
+  }
 
   function SendPanel() {
     return (
       <div className="space-y-3">
         {/* Number */}
-        <select className="input" value={numberId} onChange={(e) => { setNumberId(e.target.value); setTargetId(''); }}>
+        <select className="input" value={numberId} onChange={(e) => { setNumberId(e.target.value); setTargetIds([]); }}>
           <option value="">Select sending number</option>
           {numbers.map((n) => (
             <option key={n.id} value={n.id}>
@@ -67,65 +136,23 @@ export default function Broadcast() {
         </select>
 
         {/* Target type */}
-        <select className="input" value={targetType} onChange={(e) => { setTargetType(e.target.value); setTargetId(''); }}>
+        <select className="input" value={targetType} onChange={(e) => { setTargetType(e.target.value); setTargetIds([]); }}>
           <option value="group">WhatsApp Group / Channel</option>
           <option value="contact">Individual Contact</option>
         </select>
 
-        {/* Target selector */}
-        {targetType === 'contact' ? (
-          <select className="input" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
-            <option value="">Select contact</option>
-            {contacts.length === 0
-              ? <option disabled>No contacts — add via Contacts page</option>
-              : contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
-          </select>
-        ) : !numberId ? (
-          <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">← Select a number first</div>
-        ) : groups.length === 0 ? (
-          <div className="border border-dashed border-gray-200 rounded-lg p-3 text-center text-sm text-gray-400">No groups found — go to Groups page and refresh</div>
-        ) : (
-          <div className="border border-gray-200 rounded-lg divide-y max-h-48 overflow-y-auto">
-            {groups.filter((g) => g.type !== 'channel').length > 0 && (
-              <>
-                <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider sticky top-0">👥 Groups</div>
-                {groups.filter((g) => g.type !== 'channel').map((g) => (
-                  <button
-                    key={g.wa_id}
-                    type="button"
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${targetId === g.wa_id ? 'bg-teal-50' : 'hover:bg-gray-50'}`}
-                    onClick={() => setTargetId(g.wa_id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{g.name}</div>
-                      <div className="text-xs text-gray-400">{g.member_count} members</div>
-                    </div>
-                    {targetId === g.wa_id && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
-                  </button>
-                ))}
-              </>
-            )}
-            {groups.filter((g) => g.type === 'channel').length > 0 && (
-              <>
-                <div className="px-3 py-1 bg-purple-50 text-[10px] font-semibold text-purple-600 uppercase tracking-wider sticky top-0">📢 Channels</div>
-                {groups.filter((g) => g.type === 'channel').map((g) => (
-                  <button
-                    key={g.wa_id}
-                    type="button"
-                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${targetId === g.wa_id ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
-                    onClick={() => setTargetId(g.wa_id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{g.name}</div>
-                      <div className="text-xs text-gray-400">{g.member_count} followers</div>
-                    </div>
-                    {targetId === g.wa_id && <span className="text-purple-500 text-sm flex-shrink-0">✓</span>}
-                  </button>
-                ))}
-              </>
+        {/* Target multi-select */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-gray-500 font-medium">
+              {targetIds.length > 0 ? <span className="text-teal-600 font-semibold">{targetIds.length} selected</span> : 'Select targets'}
+            </span>
+            {targetIds.length > 0 && (
+              <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => setTargetIds([])}>Clear</button>
             )}
           </div>
-        )}
+          {targetType === 'contact' ? <ContactList /> : <TargetList />}
+        </div>
 
         {/* Selected product info */}
         {selectedProduct && (
@@ -156,7 +183,7 @@ export default function Broadcast() {
               disabled={!canSend || sendNow.isPending}
               onClick={() => sendNow.mutate()}
             >
-              {sendNow.isPending ? 'Sending…' : '📤 Send Now'}
+              {sendNow.isPending ? 'Sending…' : `📤 Send Now${targetIds.length > 1 ? ` (${targetIds.length} targets)` : ''}`}
             </button>
           </>
         )}
@@ -168,7 +195,7 @@ export default function Broadcast() {
             disabled={!canSend || batchSend.isPending}
             onClick={() => batchSend.mutate()}
           >
-            {batchSend.isPending ? 'Queuing…' : `📦 Batch Send (${batchIds.length} products)`}
+            {batchSend.isPending ? 'Queuing…' : `📦 Batch Send (${batchIds.length} products → ${targetIds.length} target${targetIds.length > 1 ? 's' : ''})`}
           </button>
         )}
 
@@ -225,7 +252,7 @@ export default function Broadcast() {
         <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setShowPanel(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div
-            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto"
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-5 max-h-[92vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">

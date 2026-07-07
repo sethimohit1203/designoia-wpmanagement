@@ -170,9 +170,13 @@ async function checkBroadcastQueues() {
   const queues = db.prepare("SELECT * FROM broadcast_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
 
   for (const q of queues) {
-    // Only fire during the scheduled hour (send_time stored as HH:MM UTC)
-    const [sendHH] = (q.send_time || '09:00').split(':');
-    if (currentHour !== sendHH) continue;
+    // Support both send_times array (new) and legacy send_time (single)
+    const sendTimes = (() => {
+      try { const arr = JSON.parse(q.send_times || '[]'); if (arr.length) return arr; } catch (_) {}
+      return [q.send_time || '09:00'];
+    })();
+    const matchesHour = sendTimes.some((t) => t.split(':')[0].padStart(2, '0') === currentHour);
+    if (!matchesHour) continue;
 
     const productIds = JSON.parse(q.product_ids || '[]');
     if (!productIds.length) continue;

@@ -33,11 +33,11 @@ const EMPTY_FORM = {
   number_id: '',
   target_ids: [],
   product_ids: [],
-  products_per_day: 3,
+  products_per_day: 1,
   frequency_days: 1,
   delay_val: 10,
   delay_unit: 'seconds',
-  send_time: '09:00',
+  send_times: ['09:00'],
 };
 
 export default function AutoBroadcast() {
@@ -90,7 +90,7 @@ export default function AutoBroadcast() {
       products_per_day: Number(form.products_per_day),
       frequency_days: Number(form.frequency_days),
       delay_seconds: toSeconds(Number(form.delay_val), form.delay_unit),
-      send_time: form.send_time,
+      send_times: form.send_times,
     });
   }
 
@@ -121,6 +121,7 @@ export default function AutoBroadcast() {
         {queues.map((q) => {
           const pids = JSON.parse(q.product_ids || '[]');
           const tids = JSON.parse(q.target_ids || '[]');
+          const stimes = (() => { try { const a = JSON.parse(q.send_times || '[]'); return a.length ? a : [q.send_time || '09:00']; } catch (_) { return [q.send_time || '09:00']; } })();
           const total = pids.length;
           const cur = (q.current_index || 0) % (total || 1);
           const { val: dVal, unit: dUnit } = fromSeconds(q.delay_seconds || 10);
@@ -134,7 +135,7 @@ export default function AutoBroadcast() {
                     <span className={`chip text-xs ${q.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{q.status}</span>
                   </div>
                   <div className="text-sm text-gray-500">
-                    📱 {numberName(q.number_id)} · 🕐 {q.send_time || '09:00'} · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''}
+                    📱 {numberName(q.number_id)} · 🕐 {stimes.join(', ')} · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''}
                   </div>
                   <div className="text-sm text-gray-500">
                     📦 {q.products_per_day}/day · ⏱ {dVal} {dUnit} delay · 🎯 {tids.length || 1} target{(tids.length || 1) > 1 ? 's' : ''}
@@ -262,24 +263,57 @@ export default function AutoBroadcast() {
                   <p className="text-xs text-gray-400 mt-1">You can select multiple groups and channels — product will be sent to all of them</p>
                 </div>
 
-                {/* Frequency + Send time */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Frequency</label>
-                    <select className="input" value={form.frequency_days} onChange={(e) => setForm((f) => ({ ...f, frequency_days: Number(e.target.value) }))}>
-                      {FREQ_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
+                {/* Frequency */}
+                <div>
+                  <label className="label">Frequency</label>
+                  <select className="input" value={form.frequency_days} onChange={(e) => setForm((f) => ({ ...f, frequency_days: Number(e.target.value) }))}>
+                    {FREQ_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Multiple Send Times */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="label mb-0">
+                      Send Times (IST) <span className="text-teal-600 font-semibold">— {form.send_times.length} slot{form.send_times.length > 1 ? 's' : ''}</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="text-xs text-teal-600 hover:underline font-medium"
+                      onClick={() => setForm((f) => ({ ...f, send_times: [...f.send_times, '12:00'] }))}
+                    >
+                      + Add Time
+                    </button>
                   </div>
-                  <div>
-                    <label className="label">Send Time (24h)</label>
-                    <input
-                      type="time"
-                      className="input"
-                      value={form.send_time}
-                      onChange={(e) => setForm((f) => ({ ...f, send_time: e.target.value }))}
-                    />
-                    <p className="text-[10px] text-gray-400 mt-0.5">IST (India Standard Time)</p>
+                  <div className="space-y-2">
+                    {form.send_times.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-16">Slot {i + 1}</span>
+                        <input
+                          type="time"
+                          className="input flex-1"
+                          value={t}
+                          onChange={(e) => setForm((f) => {
+                            const times = [...f.send_times];
+                            times[i] = e.target.value;
+                            return { ...f, send_times: times };
+                          })}
+                        />
+                        {form.send_times.length > 1 && (
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
+                            onClick={() => setForm((f) => ({ ...f, send_times: f.send_times.filter((_, j) => j !== i) }))}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Each slot sends <strong>{form.products_per_day}</strong> product(s). Total per day: {form.send_times.length * form.products_per_day} products.
+                  </p>
                 </div>
 
                 {/* Products per day + delay */}

@@ -9,15 +9,16 @@ router.get('/', (req, res) => {
 router.post('/', (req, res) => {
   const {
     name, number_id, target_ids = [], product_ids,
-    products_per_day = 3, frequency_days = 1, delay_seconds = 10, send_time = '09:00',
+    products_per_day = 3, frequency_days = 1, delay_seconds = 10, send_time = '09:00', send_times = [],
   } = req.body;
   if (!name || !number_id || !target_ids.length || !product_ids?.length) {
     return res.status(400).json({ error: 'name, number_id, target_ids, product_ids required' });
   }
   const today = new Date().toISOString().slice(0, 10);
+  const effectiveSendTimes = send_times.length ? send_times : [send_time];
   const info = db.prepare(
-    'INSERT INTO broadcast_queues (name, number_id, target_type, target_id, target_ids, product_ids, products_per_day, frequency_days, delay_seconds, send_time, next_send_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(name, number_id, 'multi', target_ids[0], JSON.stringify(target_ids), JSON.stringify(product_ids), products_per_day, frequency_days, delay_seconds, send_time, today);
+    'INSERT INTO broadcast_queues (name, number_id, target_type, target_id, target_ids, product_ids, products_per_day, frequency_days, delay_seconds, send_time, send_times, next_send_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(name, number_id, 'multi', target_ids[0], JSON.stringify(target_ids), JSON.stringify(product_ids), products_per_day, frequency_days, delay_seconds, effectiveSendTimes[0], JSON.stringify(effectiveSendTimes), today);
   res.json(db.prepare('SELECT * FROM broadcast_queues WHERE id = ?').get(info.lastInsertRowid));
 });
 
