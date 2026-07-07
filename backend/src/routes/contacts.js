@@ -29,38 +29,79 @@ function parseCsvRow(line) {
   return cols;
 }
 
-// Find column index by trying multiple common header names
-function findCol(header, ...names) {
-  for (const n of names) {
-    const idx = header.findIndex((h) => h.replace(/[^a-z0-9]/g, '').includes(n.replace(/[^a-z0-9]/g, '')));
-    if (idx !== -1) return idx;
+// Find all column indices matching any of the given name patterns
+function findCols(header, ...names) {
+  const idxs = [];
+  for (let i = 0; i < header.length; i++) {
+    const h = header[i].replace(/[^a-z0-9]/g, '');
+    if (names.some((n) => h === n.replace(/[^a-z0-9]/g, '') || h.startsWith(n.replace(/[^a-z0-9]/g, '')))) {
+      idxs.push(i);
+    }
   }
-  return -1;
+  return idxs;
+}
+
+function findCol(header, ...names) {
+  return findCols(header, ...names)[0] ?? -1;
+}
+
+// Pick the first non-zero, non-empty value from multiple columns
+function pickPhone(cols, idxs) {
+  for (const i of idxs) {
+    const raw = cols[i]?.replace(/[^\d+]/g, '') || '';
+    if (raw && raw !== '0' && raw.length >= 7) return raw;
+  }
+  return null;
 }
 
 function importRows(lines) {
-  const header = parseCsvRow(lines[0]).map((h) => h.toLowerCase());
-  const nameIdx  = findCol(header, 'name', 'fullname', 'contactname');
-  const phoneIdx = findCol(header, 'phone', 'mobile', 'number', 'phonenumber', 'mobilenumber', 'whatsapp');
+  const header = parseCsvRow(lines[0]).map((h) => h.toLowerCase().trim());
+
+  // Name: try combined fname+mname+lname, or full 'name' column
+  const nameIdx   = findCol(header, 'name', 'fullname', 'contactname');
+  const fnameIdx  = findCol(header, 'fname', 'firstname', 'first');
+  const mnameIdx  = findCol(header, 'mname', 'middlename', 'middle');
+  const lnameIdx  = findCol(header, 'lname', 'lastname', 'surname', 'last');
+
+  // Phone: try all variants, pick first non-zero
+  const phoneIdxs = findCols(header, 'mobile1', 'mobile2', 'smobile', 'phone1', 'phone2',
+    'mobile', 'phone', 'number', 'phonenumber', 'mobilenumber', 'whatsapp', 'contact');
+
+  if (!phoneIdxs.length) {
+    throw new Error(
+      'Could not find a phone/mobile column. Columns found: ' + header.join(', ') +
+      '. Add a column named "Phone", "Mobile", "Mobile1", etc.'
+    );
+  }
+
   const groupIdx = findCol(header, 'group', 'groupname', 'category', 'list');
   const tagsIdx  = findCol(header, 'tags', 'tag', 'label');
-
-  if (phoneIdx === -1) throw new Error('Could not find a phone/mobile column in the CSV/sheet. Make sure a column is named "Phone", "Mobile", or "Number".');
+  const cityIdx  = findCol(header, 'city', 'district', 'state');
 
   const insert = db.prepare('INSERT OR IGNORE INTO contacts (name, phone, group_name, tags) VALUES (?,?,?,?)');
   let count = 0;
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
     const cols = parseCsvRow(line);
-    const phone = cols[phoneIdx]?.replace(/[^\d+]/g, '');
-    if (!phone || phone.length < 7) continue;
-    insert.run(
-      nameIdx  !== -1 ? cols[nameIdx]  || 'Unknown' : 'Unknown',
-      phone,
-      groupIdx !== -1 ? cols[groupIdx] || 'All' : 'All',
-      tagsIdx  !== -1 ? cols[tagsIdx]  || '' : ''
-    );
+
+    const phone = pickPhone(cols, phoneIdxs);
+    if (!phone) continue;
+
+    // Build name
+    let name = '';
+    if (fnameIdx !== -1 || mnameIdx !== -1 || lnameIdx !== -1) {
+      name = [cols[nameIdx], cols[fnameIdx], cols[mnameIdx], cols[lnameIdx]]
+        .filter(Boolean).map((s) => s.trim()).filter(Boolean).join(' ');
+    }
+    if (!name && nameIdx !== -1) name = cols[nameIdx]?.trim();
+    if (!name) name = 'Unknown';
+
+    const group = groupIdx !== -1 ? cols[groupIdx]?.trim() || 'All' : 'All';
+    const tags  = tagsIdx  !== -1 ? cols[tagsIdx]?.trim()  || ''    : '';
+
+    insert.run(name, phone, group, tags);
     count++;
   }
   return count;
