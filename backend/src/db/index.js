@@ -137,6 +137,22 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS broadcast_queues (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  number_id INTEGER NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  product_ids TEXT NOT NULL DEFAULT '[]',
+  current_index INTEGER DEFAULT 0,
+  products_per_day INTEGER DEFAULT 3,
+  frequency_days INTEGER DEFAULT 1,
+  next_send_at TEXT,
+  delay_seconds INTEGER DEFAULT 10,
+  status TEXT DEFAULT 'active',
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `);
 
 // Lightweight migration: add columns that didn't exist in earlier versions of this table.

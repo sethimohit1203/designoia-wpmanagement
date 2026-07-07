@@ -162,9 +162,55 @@ function formatProductMessage(product, aiBody) {
   return lines.join('\n').trim();
 }
 
+async function checkBroadcastQueues() {
+  const today = new Date().toISOString().slice(0, 10);
+  const queues = db.prepare("SELECT * FROM broadcast_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
+
+  for (const q of queues) {
+    const productIds = JSON.parse(q.product_ids || '[]');
+    if (!productIds.length) continue;
+
+    const numberId = q.number_id;
+    const to = q.target_id;
+    const perDay = q.products_per_day || 3;
+
+    let idx = q.current_index || 0;
+    let sent = 0;
+
+    for (let i = 0; i < perDay; i++) {
+      const pid = productIds[idx % productIds.length];
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
+      if (!product) { idx++; continue; }
+
+      const body = formatProductMessage(product);
+      try {
+        await wa.sendMessage(numberId, to, body, product.image_url || null);
+        console.log(`[Queue ${q.id}] sent product ${pid} to ${to}`);
+        sent++;
+      } catch (e) {
+        console.error(`[Queue ${q.id}] failed product ${pid}:`, e.message);
+      }
+
+      idx++;
+      if (i < perDay - 1) {
+        await new Promise((r) => setTimeout(r, (q.delay_seconds || 10) * 1000));
+      }
+    }
+
+    // Advance cursor and schedule next send
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+    db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
+      .run(idx % productIds.length, nextDate.toISOString().slice(0, 10), q.id);
+
+    console.log(`[Queue ${q.id}] "${q.name}" sent ${sent}/${perDay} products, next send: ${nextDate.toISOString().slice(0, 10)}`);
+  }
+}
+
 function start() {
-  // Hourly: sheet schedule-date check
+  // Hourly: sheet schedule-date check + broadcast queues
   cron.schedule('0 * * * *', () => checkSheetSchedules().catch(console.error));
+  cron.schedule('0 9 * * *', () => checkBroadcastQueues().catch(console.error)); // 9 AM daily
   // Every minute: scheduled campaigns
   cron.schedule('* * * * *', () => checkScheduledCampaigns().catch(console.error));
   // Midnight: reset daily counters (also lazily handled in waManager, this is a safety net)
@@ -173,4 +219,4 @@ function start() {
   });
 }
 
-module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules };
+module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules, checkBroadcastQueues };

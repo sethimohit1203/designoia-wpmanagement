@@ -10,5 +10,6 @@ export const navItems = [
   { to: '/sheets', label: 'Sheets Sync', icon: '🧾' },
   { to: '/groups', label: 'Groups', icon: '👨‍👩‍👧' },
   { to: '/broadcast', label: 'Broadcast', icon: '📦' },
+  { to: '/auto-broadcast', label: 'Auto Broadcast', icon: '📅' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
