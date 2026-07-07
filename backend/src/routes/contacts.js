@@ -66,12 +66,19 @@ function importRows(lines) {
   return count;
 }
 
-function fetchUrl(url) {
+function fetchUrl(url, redirects = 0) {
+  if (redirects > 5) return Promise.reject(new Error('Too many redirects'));
   return new Promise((resolve, reject) => {
     const lib = url.startsWith('https') ? https : http;
-    lib.get(url, (res) => {
+    const opts = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ClikixPress/1.0)',
+        'Accept': 'text/csv,text/plain,*/*',
+      },
+    };
+    lib.get(url, opts, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchUrl(res.headers.location).then(resolve).catch(reject);
+        return fetchUrl(res.headers.location, redirects + 1).then(resolve).catch(reject);
       }
       let data = '';
       res.on('data', (c) => { data += c; });
@@ -133,25 +140,36 @@ router.post('/import-sheet', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url required' });
 
   try {
-    // Extract sheet ID and convert to CSV export URL
     const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    if (!match) return res.status(400).json({ error: 'Invalid Google Sheets URL' });
+    if (!match) return res.status(400).json({ error: 'Invalid Google Sheets URL — copy it from the browser address bar' });
     const sheetId = match[1];
 
-    // Support ?gid= for specific tab
+    // Support #gid= or ?gid= for a specific tab
     const gidMatch = url.match(/[?&#]gid=(\d+)/);
     const gid = gidMatch ? gidMatch[1] : '0';
 
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-    const csv = await fetchUrl(csvUrl);
+    // Try the gviz/tq CSV export first — works better for public sheets without OAuth
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`;
+    const csv = await fetchUrl(exportUrl);
 
-    if (!csv || csv.includes('Sign in') || csv.includes('<html')) {
-      return res.status(400).json({ error: 'Sheet is not publicly accessible. Set sharing to "Anyone with the link can view".' });
+    // Detect HTML / login page
+    const trimmed = (csv || '').trim();
+    if (!trimmed || trimmed.startsWith('<') || trimmed.toLowerCase().includes('sign in')) {
+      // Fallback: try the regular export URL
+      const fallbackUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+      const csv2 = await fetchUrl(fallbackUrl);
+      const trimmed2 = (csv2 || '').trim();
+      if (!trimmed2 || trimmed2.startsWith('<') || trimmed2.toLowerCase().includes('sign in')) {
+        return res.status(400).json({
+          error: 'Could not read the sheet. Make sure sharing is set to "Anyone with the link → Viewer" and try again.',
+        });
+      }
+      const lines2 = csv2.split('\n').filter((l) => l.trim());
+      return res.json({ imported: importRows(lines2) });
     }
 
     const lines = csv.split('\n').filter((l) => l.trim());
-    const count = importRows(lines);
-    res.json({ imported: count });
+    res.json({ imported: importRows(lines) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
