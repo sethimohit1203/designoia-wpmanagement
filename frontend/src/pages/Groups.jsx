@@ -10,6 +10,7 @@ export default function Groups() {
   const [message, setMessage] = useState('');
   const [delay, setDelay] = useState(15);
   const [channelLink, setChannelLink] = useState('');
+  const [channelName, setChannelName] = useState('');
 
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
   const { data: groups = [] } = useQuery({
@@ -25,11 +26,16 @@ export default function Groups() {
   });
 
   const addChannel = useMutation({
-    mutationFn: () => api.post('/groups/add-channel', { number_id: Number(numberId), link_or_jid: channelLink.trim() }),
+    mutationFn: () => api.post('/groups/add-channel', {
+      number_id: Number(numberId),
+      link_or_jid: channelLink.trim(),
+      channel_name: channelName.trim() || undefined,
+    }),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['groups'] });
       toast.success(`Channel "${r.data.name}" added!`);
       setChannelLink('');
+      setChannelName('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed to add channel'),
   });
@@ -57,24 +63,37 @@ export default function Groups() {
       </div>
 
       {/* Add Channel manually */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold text-sm">📢 Add WhatsApp Channel</h2>
-        <p className="text-xs text-gray-500">Paste your WhatsApp Channel invite link (e.g. <span className="font-mono">https://whatsapp.com/channel/…</span>)</p>
-        <div className="flex gap-2">
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-semibold text-sm">📢 Add WhatsApp Channel</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Paste the channel invite link <span className="font-mono text-[10px]">https://whatsapp.com/channel/…</span>
+          </p>
+        </div>
+        <input
+          className="input"
+          placeholder="https://whatsapp.com/channel/0029Va5QlBF0Qea..."
+          value={channelLink}
+          onChange={(e) => setChannelLink(e.target.value)}
+        />
+        <div className="flex gap-2 items-center">
           <input
             className="input flex-1"
-            placeholder="https://whatsapp.com/channel/0029Va..."
-            value={channelLink}
-            onChange={(e) => setChannelLink(e.target.value)}
+            placeholder="Channel name (e.g. ClikixPress)"
+            value={channelName}
+            onChange={(e) => setChannelName(e.target.value)}
           />
           <button
             className="btn-primary whitespace-nowrap"
-            disabled={!numberId || !channelLink.trim() || addChannel.isPending}
+            disabled={!numberId || !channelLink.trim() || !channelName.trim() || addChannel.isPending}
             onClick={() => addChannel.mutate()}
           >
             {addChannel.isPending ? 'Adding…' : 'Add Channel'}
           </button>
         </div>
+        <p className="text-[10px] text-gray-400">
+          To find the invite link: Open WhatsApp → Your channel → tap channel name → Share → Copy link
+        </p>
       </div>
 
       <div className="card">
