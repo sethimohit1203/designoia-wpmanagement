@@ -19,5 +19,7 @@ RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.co
 
 COPY backend/ .
 
+ENV TZ=Asia/Kolkata
+
 EXPOSE 5000
 CMD ["node", "src/server.js"]
