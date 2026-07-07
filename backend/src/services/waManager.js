@@ -282,6 +282,7 @@ class WAManager extends EventEmitter {
   _normalizeJid(to) {
     if (!to || typeof to !== 'string') throw new Error(`Invalid send target: expected a phone number or JID, got ${JSON.stringify(to)}`);
     if (to.endsWith('@g.us')) return to;
+    if (to.endsWith('@newsletter')) return to;
     if (to.endsWith('@s.whatsapp.net')) return to;
     if (to.endsWith('@c.us')) return to.replace('@c.us', '@s.whatsapp.net');
     return `${to.replace(/[^\d]/g, '')}@s.whatsapp.net`;
@@ -353,7 +354,21 @@ class WAManager extends EventEmitter {
         new Date().toISOString()
       );
     }
-    console.log(`[WA ${numberId}] fetched ${groups.length} groups`);
+    // Channels / Newsletters (WhatsApp Channels with @newsletter JIDs)
+    try {
+      const newsletters = await sock.getSubscribedNewsletters();
+      for (const nl of newsletters) {
+        const jid = nl.id;
+        const name = nl.thread_metadata?.name?.text || nl.name || 'Unknown Channel';
+        const subscribers = nl.thread_metadata?.subscriber_count || 0;
+        insert.run(numberId, jid, name, 'channel', subscribers, 1, new Date().toISOString());
+      }
+      console.log(`[WA ${numberId}] fetched ${groups.length} groups + ${newsletters.length} channels`);
+    } catch (e) {
+      console.warn(`[WA ${numberId}] newsletter fetch skipped: ${e.message}`);
+      console.log(`[WA ${numberId}] fetched ${groups.length} groups`);
+    }
+
     return groups;
   }
 

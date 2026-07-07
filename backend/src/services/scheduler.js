@@ -165,7 +165,7 @@ function formatProductMessage(product, aiBody) {
 async function checkBroadcastQueues() {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  const currentHour = String(now.getUTCHours()).padStart(2, '0');
+  const currentHour = String(now.getHours()).padStart(2, '0');
 
   const queues = db.prepare("SELECT * FROM broadcast_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
 

@@ -224,17 +224,39 @@ export default function AutoBroadcast() {
                   ) : groups.length === 0 ? (
                     <div className="border border-dashed border-gray-200 rounded-lg p-4 text-center text-sm text-gray-400">No groups found — go to Groups page and refresh</div>
                   ) : (
-                    <div className="border border-gray-200 rounded-lg divide-y max-h-44 overflow-y-auto">
-                      {groups.map((g) => (
-                        <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${form.target_ids.includes(g.wa_id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
-                          <input type="checkbox" checked={form.target_ids.includes(g.wa_id)} onChange={() => toggleArr('target_ids', g.wa_id)} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{g.name}</div>
-                            <div className="text-xs text-gray-400">{g.member_count} members</div>
-                          </div>
-                          {form.target_ids.includes(g.wa_id) && <span className="text-teal-500 text-sm">✓</span>}
-                        </label>
-                      ))}
+                    <div className="border border-gray-200 rounded-lg divide-y max-h-52 overflow-y-auto">
+                      {/* Groups section */}
+                      {groups.filter((g) => g.type !== 'channel').length > 0 && (
+                        <>
+                          <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider sticky top-0">👥 Groups</div>
+                          {groups.filter((g) => g.type !== 'channel').map((g) => (
+                            <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${form.target_ids.includes(g.wa_id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+                              <input type="checkbox" checked={form.target_ids.includes(g.wa_id)} onChange={() => toggleArr('target_ids', g.wa_id)} />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{g.name}</div>
+                                <div className="text-xs text-gray-400">{g.member_count} members</div>
+                              </div>
+                              {form.target_ids.includes(g.wa_id) && <span className="text-teal-500 text-sm">✓</span>}
+                            </label>
+                          ))}
+                        </>
+                      )}
+                      {/* Channels section */}
+                      {groups.filter((g) => g.type === 'channel').length > 0 && (
+                        <>
+                          <div className="px-3 py-1 bg-purple-50 text-[10px] font-semibold text-purple-600 uppercase tracking-wider sticky top-0">📢 Channels</div>
+                          {groups.filter((g) => g.type === 'channel').map((g) => (
+                            <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${form.target_ids.includes(g.wa_id) ? 'bg-purple-50' : 'hover:bg-gray-50'}`}>
+                              <input type="checkbox" checked={form.target_ids.includes(g.wa_id)} onChange={() => toggleArr('target_ids', g.wa_id)} />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{g.name}</div>
+                                <div className="text-xs text-gray-400">{g.member_count} followers</div>
+                              </div>
+                              {form.target_ids.includes(g.wa_id) && <span className="text-purple-500 text-sm">✓</span>}
+                            </label>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                   <p className="text-xs text-gray-400 mt-1">You can select multiple groups and channels — product will be sent to all of them</p>
@@ -256,7 +278,7 @@ export default function AutoBroadcast() {
                       value={form.send_time}
                       onChange={(e) => setForm((f) => ({ ...f, send_time: e.target.value }))}
                     />
-                    <p className="text-[10px] text-gray-400 mt-0.5">Server time (UTC). Add 5:30 for IST.</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">IST (India Standard Time)</p>
                   </div>
                 </div>
 

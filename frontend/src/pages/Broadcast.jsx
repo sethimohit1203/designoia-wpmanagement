@@ -68,8 +68,7 @@ export default function Broadcast() {
 
         {/* Target type */}
         <select className="input" value={targetType} onChange={(e) => { setTargetType(e.target.value); setTargetId(''); }}>
-          <option value="group">WhatsApp Group</option>
-          <option value="channel">Community Channel</option>
+          <option value="group">WhatsApp Group / Channel</option>
           <option value="contact">Individual Contact</option>
         </select>
 
@@ -84,13 +83,22 @@ export default function Broadcast() {
         ) : (
           <select className="input" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
             <option value="">
-              {!numberId ? '← Select a number first' : groups.length === 0 ? 'No groups found — refresh on Groups page' : 'Select group / channel'}
+              {!numberId ? '← Select a number first' : groups.length === 0 ? 'No groups found — refresh on Groups page' : 'Select group or channel'}
             </option>
-            {groups.map((g) => (
-              <option key={g.wa_id} value={g.wa_id}>
-                {g.name} ({g.member_count} members)
-              </option>
-            ))}
+            {groups.filter((g) => g.type !== 'channel').length > 0 && (
+              <optgroup label="👥 Groups">
+                {groups.filter((g) => g.type !== 'channel').map((g) => (
+                  <option key={g.wa_id} value={g.wa_id}>{g.name} ({g.member_count} members)</option>
+                ))}
+              </optgroup>
+            )}
+            {groups.filter((g) => g.type === 'channel').length > 0 && (
+              <optgroup label="📢 Channels">
+                {groups.filter((g) => g.type === 'channel').map((g) => (
+                  <option key={g.wa_id} value={g.wa_id}>{g.name} ({g.member_count} followers)</option>
+                ))}
+              </optgroup>
+            )}
           </select>
         )}
 
