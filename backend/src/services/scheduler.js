@@ -163,16 +163,28 @@ function formatProductMessage(product, aiBody) {
 }
 
 async function checkBroadcastQueues() {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const currentHour = String(now.getUTCHours()).padStart(2, '0');
+
   const queues = db.prepare("SELECT * FROM broadcast_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
 
   for (const q of queues) {
+    // Only fire during the scheduled hour (send_time stored as HH:MM UTC)
+    const [sendHH] = (q.send_time || '09:00').split(':');
+    if (currentHour !== sendHH) continue;
+
     const productIds = JSON.parse(q.product_ids || '[]');
     if (!productIds.length) continue;
 
+    // Support multiple targets (groups + channels together)
+    const targetIds = JSON.parse(q.target_ids || '[]');
+    const targets = targetIds.length > 0 ? targetIds : (q.target_id ? [q.target_id] : []);
+    if (!targets.length) continue;
+
     const numberId = q.number_id;
-    const to = q.target_id;
     const perDay = q.products_per_day || 3;
+    const delayMs = (q.delay_seconds || 10) * 1000;
 
     let idx = q.current_index || 0;
     let sent = 0;
@@ -183,17 +195,23 @@ async function checkBroadcastQueues() {
       if (!product) { idx++; continue; }
 
       const body = formatProductMessage(product);
-      try {
-        await wa.sendMessage(numberId, to, body, product.image_url || null);
-        console.log(`[Queue ${q.id}] sent product ${pid} to ${to}`);
-        sent++;
-      } catch (e) {
-        console.error(`[Queue ${q.id}] failed product ${pid}:`, e.message);
+
+      // Send to every selected target
+      for (const to of targets) {
+        try {
+          await wa.sendMessage(numberId, to, body, product.image_url || null);
+          sent++;
+        } catch (e) {
+          console.error(`[Queue ${q.id}] failed product ${pid} to ${to}:`, e.message);
+        }
+        if (targets.indexOf(to) < targets.length - 1) {
+          await new Promise((r) => setTimeout(r, 3000)); // 3s between targets
+        }
       }
 
       idx++;
       if (i < perDay - 1) {
-        await new Promise((r) => setTimeout(r, (q.delay_seconds || 10) * 1000));
+        await new Promise((r) => setTimeout(r, delayMs));
       }
     }
 
@@ -203,14 +221,14 @@ async function checkBroadcastQueues() {
     db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
       .run(idx % productIds.length, nextDate.toISOString().slice(0, 10), q.id);
 
-    console.log(`[Queue ${q.id}] "${q.name}" sent ${sent}/${perDay} products, next send: ${nextDate.toISOString().slice(0, 10)}`);
+    console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs across ${targets.length} target(s), next: ${nextDate.toISOString().slice(0, 10)}`);
   }
 }
 
 function start() {
   // Hourly: sheet schedule-date check + broadcast queues
   cron.schedule('0 * * * *', () => checkSheetSchedules().catch(console.error));
-  cron.schedule('0 9 * * *', () => checkBroadcastQueues().catch(console.error)); // 9 AM daily
+  cron.schedule('0 * * * *', () => checkBroadcastQueues().catch(console.error)); // every hour, checks send_time per queue
   // Every minute: scheduled campaigns
   cron.schedule('* * * * *', () => checkScheduledCampaigns().catch(console.error));
   // Midnight: reset daily counters (also lazily handled in waManager, this is a safety net)

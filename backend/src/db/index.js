@@ -156,6 +156,13 @@ CREATE TABLE IF NOT EXISTS broadcast_queues (
 `);
 
 // Lightweight migration: add columns that didn't exist in earlier versions of this table.
+const broadcastQueueCols = db.prepare("PRAGMA table_info(broadcast_queues)").all().map((c) => c.name);
+if (!broadcastQueueCols.includes('send_time')) {
+  db.exec("ALTER TABLE broadcast_queues ADD COLUMN send_time TEXT DEFAULT '09:00'");
+}
+if (!broadcastQueueCols.includes('target_ids')) {
+  db.exec("ALTER TABLE broadcast_queues ADD COLUMN target_ids TEXT DEFAULT '[]'");
+}
 const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().map((c) => c.name);
 if (!sheetsConfigCols.includes('column_map')) {
   db.exec("ALTER TABLE sheets_config ADD COLUMN column_map TEXT DEFAULT '{}'");
