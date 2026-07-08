@@ -30,6 +30,7 @@ class WAManager extends EventEmitter {
     super();
     this.clients = new Map(); // numberId -> { sock, qr, status }
     this._manualDisconnect = new Set(); // numberIds disconnected by the user (no auto-reconnect)
+    this._reconnectAttempts = new Map(); // numberId -> attempt count for backoff
   }
 
   list() {
@@ -146,7 +147,7 @@ class WAManager extends EventEmitter {
       if (connection === 'open') {
         entry.qr = null;
         entry.status = 'connected';
-        // sock.user.id is like "919876543210:0@s.whatsapp.net"
+        this._reconnectAttempts.delete(numberId); // reset backoff on success
         const userId = sock.user?.id?.split(':')[0]?.split('@')[0] || null;
         const dbRow = db.prepare('SELECT first_connected_at FROM numbers WHERE id = ?').get(numberId);
         if (!dbRow?.first_connected_at) {
@@ -182,9 +183,14 @@ class WAManager extends EventEmitter {
           fs.rm(path.join(SESSIONS_DIR, `wa_${numberId}`), { recursive: true, force: true }, () => {});
           db.prepare("UPDATE numbers SET phone = NULL WHERE id = ?").run(numberId);
         } else if (!this._manualDisconnect.has(numberId)) {
-          // Transient drop — auto-reconnect once after 5 s
-          console.log(`[WA ${numberId}] connection dropped (${reason}) — reconnecting in 5 s`);
-          setTimeout(() => this.connect(numberId).catch(() => {}), 5000);
+          // Transient drop — exponential backoff: 5s, 10s, 20s, 40s, 60s max
+          const attempts = (this._reconnectAttempts.get(numberId) || 0) + 1;
+          this._reconnectAttempts.set(numberId, attempts);
+          const delay = Math.min(60000, 5000 * Math.pow(2, attempts - 1));
+          console.log(`[WA ${numberId}] connection dropped (${reason}) — reconnect attempt ${attempts} in ${delay / 1000}s`);
+          setTimeout(() => this.connect(numberId).catch((e) => {
+            console.error(`[WA ${numberId}] reconnect attempt ${attempts} failed:`, e.message);
+          }), delay);
         }
       }
     });

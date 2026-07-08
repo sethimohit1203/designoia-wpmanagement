@@ -29,6 +29,19 @@ scheduler.start();
 
 const wa = require('./services/waManager');
 
+// Auto-reconnect any number that was connected before the server restarted
+setTimeout(async () => {
+  const rows = db.prepare("SELECT id FROM numbers WHERE status IN ('connected', 'qr')").all();
+  for (const row of rows) {
+    try {
+      console.log(`[startup] reconnecting number ${row.id}`);
+      await wa.connect(row.id);
+    } catch (e) {
+      console.error(`[startup] failed to reconnect number ${row.id}:`, e.message);
+    }
+  }
+}, 3000);
+
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`Designoia-WPManagement backend running on http://localhost:${PORT}`);

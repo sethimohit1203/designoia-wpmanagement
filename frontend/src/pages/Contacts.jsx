@@ -7,6 +7,7 @@ export default function Contacts() {
   const [search, setSearch]           = useState('');
   const [group, setGroup]             = useState('All');
   const [page, setPage]               = useState(1);
+  const [limit, setLimit]             = useState(100);
   const [selected, setSelected]       = useState([]);
   const [form, setForm]               = useState({ name: '', phone: '', group_name: 'All', tags: '' });
   const [sheetUrl, setSheetUrl]       = useState('');
@@ -14,8 +15,8 @@ export default function Contacts() {
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contacts', search, group, page],
-    queryFn: () => api.get('/contacts', { params: { search, group, page, limit: 100 } }).then((r) => r.data),
+    queryKey: ['contacts', search, group, page, limit],
+    queryFn: () => api.get('/contacts', { params: { search, group, page, limit } }).then((r) => r.data),
     keepPreviousData: true,
   });
 
@@ -53,6 +54,12 @@ export default function Contacts() {
     onError: onErr,
   });
 
+  const dedup = useMutation({
+    mutationFn: () => api.post('/contacts/dedup'),
+    onSuccess: (res) => { invalidate(); toast.success(`Removed ${res.data.removed} duplicate phone numbers`); },
+    onError: onErr,
+  });
+
   const importSheet = useMutation({
     mutationFn: () => api.post('/contacts/import-sheet', { url: sheetUrl }),
     onSuccess: (res) => { invalidate(); toast.success(`Imported ${res.data.imported} contacts from sheet`); setSheetUrl(''); setShowSheetInput(false); },
@@ -64,6 +71,7 @@ export default function Contacts() {
 
   function handleSearch(val) { setSearch(val); setPage(1); }
   function handleGroup(val)  { setGroup(val);  setPage(1); }
+  function handleLimit(val)  { setLimit(Number(val)); setPage(1); }
 
   return (
     <div className="space-y-6">
@@ -102,6 +110,9 @@ export default function Contacts() {
           </label>
           <button className="btn-secondary whitespace-nowrap" onClick={() => setShowSheetInput((v) => !v)}>
             📊 From Google Sheet
+          </button>
+          <button className="btn-secondary text-orange-600 whitespace-nowrap" onClick={() => { if (window.confirm('Remove duplicate phone numbers? This keeps the first import of each number.')) dedup.mutate(); }}>
+            🧹 Clean Dupes
           </button>
           {selected.length > 0 && (
             <button className="btn-secondary text-red-600" onClick={() => bulkDelete.mutate()}>
@@ -171,13 +182,18 @@ export default function Contacts() {
       </div>
 
       {/* Pagination */}
-      {pages > 1 && (
+      {total > 0 && (
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <button className="btn-secondary text-xs px-3 py-1" disabled={page <= 1} onClick={() => setPage(1)}>«</button>
           <button className="btn-secondary text-xs px-3 py-1" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹ Prev</button>
           <span className="text-sm text-gray-500">Page {page} of {pages}</span>
           <button className="btn-secondary text-xs px-3 py-1" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Next ›</button>
           <button className="btn-secondary text-xs px-3 py-1" disabled={page >= pages} onClick={() => setPage(pages)}>»</button>
+          <select className="input text-xs py-1 w-auto" value={limit} onChange={(e) => handleLimit(e.target.value)}>
+            <option value={100}>100 / page</option>
+            <option value={500}>500 / page</option>
+            <option value={1000}>1000 / page</option>
+          </select>
         </div>
       )}
     </div>

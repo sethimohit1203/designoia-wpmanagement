@@ -233,4 +233,14 @@ router.post('/bulk-delete', (req, res) => {
   res.json({ ok: true, deleted: ids.length });
 });
 
+// Remove duplicate phone numbers — keep the lowest id (first imported)
+router.post('/dedup', (req, res) => {
+  const result = db.prepare(`
+    DELETE FROM contacts WHERE id NOT IN (
+      SELECT MIN(id) FROM contacts GROUP BY phone
+    )
+  `).run();
+  res.json({ removed: result.changes });
+});
+
 module.exports = router;
