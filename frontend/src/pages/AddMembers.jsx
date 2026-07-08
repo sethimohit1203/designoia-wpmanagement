@@ -17,6 +17,7 @@ const EMPTY_FORM = {
   contact_ids: [],
   members_per_day: 10,
   frequency_days: 1,
+  delay_seconds: 10,
 };
 
 export default function AddMembers() {
@@ -82,6 +83,7 @@ export default function AddMembers() {
       contact_ids: form.contact_ids,
       members_per_day: Number(form.members_per_day),
       frequency_days: Number(form.frequency_days),
+      delay_seconds: Number(form.delay_seconds),
     });
   }
 
@@ -129,7 +131,7 @@ export default function AddMembers() {
                     <span className={`chip text-xs ${q.status === 'active' ? 'bg-green-100 text-green-700' : q.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{q.status}</span>
                   </div>
                   <div className="text-sm text-gray-500">
-                    📱 {numberName(q.number_id)} · 👥 {q.members_per_day}/day · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''}
+                    📱 {numberName(q.number_id)} · 👥 {q.members_per_day}/day · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''} · ⏱ {q.delay_seconds ?? 10}s gap
                   </div>
                   <div className="text-sm text-gray-500 truncate">🎯 {q.group_id}</div>
                   <div className="text-xs text-gray-400">📅 Next: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></div>
@@ -248,18 +250,29 @@ export default function AddMembers() {
                   </div>
                 </div>
 
-                {/* Members per day + frequency */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* Members per day + frequency + delay */}
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="label">Members per Day</label>
                     <input type="number" min="1" max="50" className="input" value={form.members_per_day} onChange={(e) => setForm((f) => ({ ...f, members_per_day: Number(e.target.value) }))} />
-                    <p className="text-[10px] text-gray-400 mt-0.5">WhatsApp allows max ~20–30/day safely</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Max ~20/day safely</p>
                   </div>
                   <div>
                     <label className="label">Frequency</label>
                     <select className="input" value={form.frequency_days} onChange={(e) => setForm((f) => ({ ...f, frequency_days: Number(e.target.value) }))}>
                       {FREQ_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <label className="label">Delay Between Each</label>
+                    <select className="input" value={form.delay_seconds} onChange={(e) => setForm((f) => ({ ...f, delay_seconds: Number(e.target.value) }))}>
+                      <option value={5}>5 seconds</option>
+                      <option value={10}>10 seconds</option>
+                      <option value={20}>20 seconds</option>
+                      <option value={30}>30 seconds</option>
+                      <option value={60}>1 minute</option>
+                    </select>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Gap between additions</p>
                   </div>
                 </div>
 

@@ -237,25 +237,26 @@ async function checkMemberQueues() {
     const contactIds = JSON.parse(q.contact_ids || '[]');
     if (!contactIds.length) continue;
 
+    const delayMs = (q.delay_seconds ?? 10) * 1000;
     let idx = q.current_index || 0;
-    const batch = [];
+    let added = 0;
+
     for (let i = 0; i < q.members_per_day; i++) {
-      if (idx >= contactIds.length) break; // all contacts processed
-      const cid = contactIds[idx];
-      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(cid);
+      if (idx >= contactIds.length) break;
+      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
       if (contact?.phone) {
-        batch.push(contact.phone.replace(/\D/g, '') + '@s.whatsapp.net');
+        const jid = contact.phone.replace(/\D/g, '') + '@s.whatsapp.net';
+        try {
+          await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
+          added++;
+        } catch (e) {
+          console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
+        }
+        if (i < q.members_per_day - 1 && idx + 1 < contactIds.length) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
       }
       idx++;
-    }
-
-    if (batch.length) {
-      try {
-        await wa.addGroupMembers(q.number_id, q.group_id, batch);
-        console.log(`[MemberQueue ${q.id}] "${q.name}" added ${batch.length} members`);
-      } catch (e) {
-        console.error(`[MemberQueue ${q.id}] failed:`, e.message);
-      }
     }
 
     const allDone = idx >= contactIds.length;
@@ -264,7 +265,7 @@ async function checkMemberQueues() {
     db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
       .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
 
-    if (allDone) console.log(`[MemberQueue ${q.id}] "${q.name}" all contacts added — marked completed`);
+    console.log(`[MemberQueue ${q.id}] "${q.name}" added ${added} members — ${allDone ? 'completed' : 'active'}`);
   }
 }
 
