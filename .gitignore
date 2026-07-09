@@ -9,3 +9,5 @@ backend/.wwebjs_auth/
 backend/google-credentials.json
 *.log
 .DS_Store
+
+seo-suite-link/

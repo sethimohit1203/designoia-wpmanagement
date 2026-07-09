@@ -14,6 +14,13 @@
       "runtimeArgs": ["vite", "--port", "5173"],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "seo-suite",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "seo-suite-link",
+      "port": 3000
     }
   ]
 }
