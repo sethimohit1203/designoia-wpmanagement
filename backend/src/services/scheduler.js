@@ -219,13 +219,25 @@ async function checkBroadcastQueues() {
       }
     }
 
-    // Advance cursor and schedule next send
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
-    db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
-      .run(idx % productIds.length, nextDate.toISOString().slice(0, 10), q.id);
+    // Only advance next_send_at after the LAST slot of the day fires,
+    // so earlier slots don't block later ones.
+    const lastSlotHour = sendTimes.reduce((max, t) => {
+      const h = t.split(':')[0].padStart(2, '0');
+      return h > max ? h : max;
+    }, '00');
+    const isLastSlot = currentHour === lastSlotHour;
 
-    console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs across ${targets.length} target(s), next: ${nextDate.toISOString().slice(0, 10)}`);
+    if (isLastSlot) {
+      const nextDate = new Date();
+      nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+      db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
+        .run(idx % productIds.length, nextDate.toISOString().slice(0, 10), q.id);
+      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — last slot, next: ${nextDate.toISOString().slice(0, 10)}`);
+    } else {
+      db.prepare('UPDATE broadcast_queues SET current_index = ? WHERE id = ?')
+        .run(idx % productIds.length, q.id);
+      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — more slots today`);
+    }
   }
 }
 
