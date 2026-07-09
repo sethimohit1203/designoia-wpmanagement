@@ -164,8 +164,11 @@ function formatProductMessage(product, aiBody) {
 
 async function checkBroadcastQueues() {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const currentHour = String(now.getHours()).padStart(2, '0');
+  // All times the user enters are IST — compare in IST, not UTC
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + IST_OFFSET_MS);
+  const today = istNow.toISOString().slice(0, 10);          // IST date YYYY-MM-DD
+  const currentTime = istNow.toISOString().slice(11, 16);   // IST HH:MM
 
   const queues = db.prepare("SELECT * FROM broadcast_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
 
@@ -175,8 +178,9 @@ async function checkBroadcastQueues() {
       try { const arr = JSON.parse(q.send_times || '[]'); if (arr.length) return arr; } catch (_) {}
       return [q.send_time || '09:00'];
     })();
-    const matchesHour = sendTimes.some((t) => t.split(':')[0].padStart(2, '0') === currentHour);
-    if (!matchesHour) continue;
+    // Match exact HH:MM so the user's IST time is respected
+    const matchesTime = sendTimes.some((t) => t === currentTime);
+    if (!matchesTime) continue;
 
     const productIds = JSON.parse(q.product_ids || '[]');
     if (!productIds.length) continue;
@@ -219,20 +223,18 @@ async function checkBroadcastQueues() {
       }
     }
 
-    // Only advance next_send_at after the LAST slot of the day fires,
-    // so earlier slots don't block later ones.
-    const lastSlotHour = sendTimes.reduce((max, t) => {
-      const h = t.split(':')[0].padStart(2, '0');
-      return h > max ? h : max;
-    }, '00');
-    const isLastSlot = currentHour === lastSlotHour;
+    // Only advance next_send_at after the LAST slot of the day fires
+    const lastSlotTime = sendTimes.reduce((max, t) => (t > max ? t : max), '00:00');
+    const isLastSlot = currentTime === lastSlotTime;
 
     if (isLastSlot) {
-      const nextDate = new Date();
-      nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+      // Compute next IST date
+      const [y, m, d] = today.split('-').map(Number);
+      const nextIstDate = new Date(Date.UTC(y, m - 1, d + (q.frequency_days || 1)));
+      const nextDateStr = nextIstDate.toISOString().slice(0, 10);
       db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
-        .run(idx % productIds.length, nextDate.toISOString().slice(0, 10), q.id);
-      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — last slot, next: ${nextDate.toISOString().slice(0, 10)}`);
+        .run(idx % productIds.length, nextDateStr, q.id);
+      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — last slot, next: ${nextDateStr}`);
     } else {
       db.prepare('UPDATE broadcast_queues SET current_index = ? WHERE id = ?')
         .run(idx % productIds.length, q.id);
@@ -284,9 +286,10 @@ async function checkMemberQueues() {
 }
 
 function start() {
-  // Hourly: sheet schedule-date check + broadcast queues
+  // Sheet schedule-date check: hourly is enough
   cron.schedule('0 * * * *', () => checkSheetSchedules().catch(console.error));
-  cron.schedule('0 * * * *', () => checkBroadcastQueues().catch(console.error));
+  // Broadcast queues: every minute so exact IST HH:MM slots fire on time
+  cron.schedule('* * * * *', () => checkBroadcastQueues().catch(console.error));
   // Every minute: scheduled campaigns
   cron.schedule('* * * * *', () => checkScheduledCampaigns().catch(console.error));
   // Daily at midnight IST: member queues + reset counters
