@@ -245,7 +245,9 @@ async function checkMemberQueues() {
       if (idx >= contactIds.length) break;
       const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
       if (contact?.phone) {
-        const jid = contact.phone.replace(/\D/g, '') + '@s.whatsapp.net';
+        let digits = contact.phone.replace(/\D/g, '');
+        if (digits.length === 10) digits = '91' + digits;
+        const jid = digits + '@s.whatsapp.net';
         try {
           await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
           added++;

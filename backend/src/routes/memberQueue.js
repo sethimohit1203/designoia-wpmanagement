@@ -5,6 +5,12 @@ const wa = require('../services/waManager');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function toJid(phone) {
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) digits = '91' + digits;
+  return digits + '@s.whatsapp.net';
+}
+
 async function runQueue(q) {
   const contactIds = JSON.parse(q.contact_ids || '[]');
   if (!contactIds.length) return;
@@ -17,7 +23,7 @@ async function runQueue(q) {
     if (idx >= contactIds.length) break;
     const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
     if (contact?.phone) {
-      const jid = contact.phone.replace(/\D/g, '') + '@s.whatsapp.net';
+      const jid = toJid(contact.phone);
       try {
         await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
         added++;
