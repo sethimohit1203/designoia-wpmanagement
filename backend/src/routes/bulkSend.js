@@ -63,7 +63,7 @@ router.post('/send', upload.single('media'), async (req, res) => {
 });
 
 router.get('/preview', (req, res) => {
-  const { message } = req.query;
+  const { message = '' } = req.query;
   const variables = (message.match(/\{[a-zA-Z_]+\}/g) || []);
   res.json({ variables: [...new Set(variables)] });
 });

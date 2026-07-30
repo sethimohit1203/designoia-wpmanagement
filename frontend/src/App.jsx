@@ -18,7 +18,7 @@ import AddMembers from './pages/AddMembers';
 import Settings from './pages/Settings';
 
 export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('auth') === '1');
+  const [authed, setAuthed] = useState(() => !!sessionStorage.getItem('token'));
 
   if (!authed) return <Login onLogin={() => setAuthed(true)} />;
 

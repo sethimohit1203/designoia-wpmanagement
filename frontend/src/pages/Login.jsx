@@ -1,20 +1,25 @@
 import { useState } from 'react';
-
-const CORRECT_PASSWORD = 'mohit@123';
+import api from '../api/client';
 
 export default function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (password === CORRECT_PASSWORD) {
-      sessionStorage.setItem('auth', '1');
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.post('/auth/login', { password });
+      sessionStorage.setItem('token', data.token);
       onLogin();
-    } else {
-      setError('Incorrect password. Please try again.');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Incorrect password. Please try again.');
       setPassword('');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -47,9 +52,10 @@ export default function Login({ onLogin }) {
           {error && <p className="text-red-500 text-xs">{error}</p>}
           <button
             type="submit"
-            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-lg transition-colors"
+            disabled={loading}
+            className="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
           >
-            Sign In
+            {loading ? 'Signing In…' : 'Sign In'}
           </button>
         </form>
       </div>

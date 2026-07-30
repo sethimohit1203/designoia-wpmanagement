@@ -3,25 +3,34 @@ const express = require('express');
 const cors = require('cors');
 const { uploadsDir } = require('./utils/paths');
 const db = require('./db');
+const { requireAuth } = require('./middleware/auth');
 
 const app = express();
-app.use(cors());
+// FRONTEND_URL restricts CORS to the deployed dashboard in production; falls back to
+// allow-all in dev when it isn't set, matching prior behavior.
+app.use(cors(process.env.FRONTEND_URL ? { origin: process.env.FRONTEND_URL } : undefined));
 app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
-app.use('/api/numbers', require('./routes/numbers'));
-app.use('/api/contacts', require('./routes/contacts'));
-app.use('/api/templates', require('./routes/templates'));
-app.use('/api/campaigns', require('./routes/campaigns'));
-app.use('/api/bulk', require('./routes/bulkSend'));
-app.use('/api/chatbot', require('./routes/chatbot'));
-app.use('/api/analytics', require('./routes/analytics'));
-app.use('/api/settings', require('./routes/settings'));
+// Public — issues the JWT everything else requires.
+app.use('/api/auth', require('./routes/auth'));
+
+app.use('/api/numbers', requireAuth, require('./routes/numbers'));
+app.use('/api/contacts', requireAuth, require('./routes/contacts'));
+app.use('/api/templates', requireAuth, require('./routes/templates'));
+app.use('/api/campaigns', requireAuth, require('./routes/campaigns'));
+app.use('/api/bulk', requireAuth, require('./routes/bulkSend'));
+app.use('/api/chatbot', requireAuth, require('./routes/chatbot'));
+app.use('/api/analytics', requireAuth, require('./routes/analytics'));
+app.use('/api/settings', requireAuth, require('./routes/settings'));
+// sheets.js applies requireAuth internally to everything except its
+// /oauth/start and /oauth/callback routes, which Google's servers hit
+// directly (no Bearer token available) as part of the OAuth redirect flow.
 app.use('/api/sheets', require('./routes/sheets'));
-app.use('/api/groups', require('./routes/groups'));
-app.use('/api/broadcast', require('./routes/broadcast'));
-app.use('/api/broadcast-queue', require('./routes/broadcastQueue'));
-app.use('/api/member-queue', require('./routes/memberQueue'));
+app.use('/api/groups', requireAuth, require('./routes/groups'));
+app.use('/api/broadcast', requireAuth, require('./routes/broadcast'));
+app.use('/api/broadcast-queue', requireAuth, require('./routes/broadcastQueue'));
+app.use('/api/member-queue', requireAuth, require('./routes/memberQueue'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'designoia-wpmanagement-backend' }));
 
@@ -39,6 +48,9 @@ setTimeout(async () => {
       await wa.connect(row.id);
     } catch (e) {
       console.error(`[startup] failed to reconnect number ${row.id}:`, e.message);
+      // Without this, the DB keeps reporting 'connected' with no live socket behind it,
+      // so the UI shows a healthy number that silently can't send anything.
+      db.prepare("UPDATE numbers SET status = 'disconnected' WHERE id = ?").run(row.id);
     }
   }
 }, 3000);

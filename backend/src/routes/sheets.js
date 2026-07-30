@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { requireAuth } = require('../middleware/auth');
 const { extractSheetId, syncSheet, writeStatus, getAuthUrl, handleOAuthCallback, isConnected } = require('../services/sheetsService');
 
-router.get('/oauth/status', (req, res) => {
-  res.json({ connected: isConnected() });
-});
+// /oauth/start and /oauth/callback are hit directly by the browser (via
+// redirect) and by Google's servers — no Bearer token is available, so they
+// stay public. Every other route below requires auth.
 
 router.get('/oauth/start', (req, res) => {
   try {
@@ -38,6 +39,12 @@ router.get('/oauth/callback', async (req, res) => {
     res.status(500).send(`<h3>OAuth error: ${e.message}</h3><pre style="white-space:pre-wrap;font-size:12px;color:#888">${e.stack}</pre>`);
   }
 });
+
+router.get('/oauth/status', requireAuth, (req, res) => {
+  res.json({ connected: isConnected() });
+});
+
+router.use(requireAuth);
 
 router.get('/configs', (req, res) => {
   res.json(db.prepare('SELECT * FROM sheets_config ORDER BY id DESC').all());
