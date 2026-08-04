@@ -28,6 +28,32 @@ function fromSeconds(sec) {
   return { val: sec, unit: 'seconds' };
 }
 
+const INTERVAL_UNITS = [
+  { value: 'minutes', label: 'Minutes', min: 5, max: 1440 },
+  { value: 'hours',   label: 'Hours',   min: 1, max: 23 },
+];
+
+function intervalToMinutes(val, unit) {
+  return unit === 'hours' ? val * 60 : val;
+}
+
+// Evenly spaced times starting at `startTime`, `count` of them, `intervalMinutes` apart.
+// Stops early (fewer than `count` times) rather than wrapping past midnight, so every
+// generated slot stays on the same calendar day and the existing "last slot" logic
+// (which picks the lexicographically-max HH:MM as the day's final send) stays correct.
+function computeIntervalTimes(startTime, intervalMinutes, count) {
+  const [h, m] = startTime.split(':').map(Number);
+  let cur = h * 60 + m;
+  const times = [];
+  for (let i = 0; i < count && cur < 24 * 60; i++) {
+    const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+    const mm = String(cur % 60).padStart(2, '0');
+    times.push(`${hh}:${mm}`);
+    cur += intervalMinutes;
+  }
+  return times;
+}
+
 const EMPTY_FORM = {
   name: '',
   number_id: '',
@@ -38,6 +64,10 @@ const EMPTY_FORM = {
   delay_val: 10,
   delay_unit: 'seconds',
   send_times: ['09:00'],
+  schedule_mode: 'slots', // 'slots' (pick exact times) | 'interval' (start time + repeat every)
+  interval_start: '09:00',
+  interval_val: 3,
+  interval_unit: 'hours',
 };
 
 export default function AutoBroadcast() {
@@ -87,10 +117,16 @@ export default function AutoBroadcast() {
     setForm((f) => ({ ...f, product_ids: products.map((p) => p.id) }));
   }
 
+  const intervalPreviewTimes = form.schedule_mode === 'interval'
+    ? computeIntervalTimes(form.interval_start, intervalToMinutes(form.interval_val, form.interval_unit), Number(form.products_per_day) || 1)
+    : form.send_times;
+
   function handleSubmit(e) {
     e.preventDefault();
     if (!form.target_ids.length) return toast.error('Select at least one group / channel');
     if (!form.product_ids.length) return toast.error('Select at least one product');
+    const sendTimes = form.schedule_mode === 'interval' ? intervalPreviewTimes : form.send_times;
+    if (!sendTimes.length) return toast.error('No valid send times — adjust the start time or interval');
     const payload = {
       name: form.name,
       number_id: Number(form.number_id),
@@ -99,7 +135,7 @@ export default function AutoBroadcast() {
       products_per_day: Number(form.products_per_day),
       frequency_days: Number(form.frequency_days),
       delay_seconds: toSeconds(Number(form.delay_val), form.delay_unit),
-      send_times: form.send_times,
+      send_times: sendTimes,
     };
     if (editingId) saveEdit.mutate(payload);
     else createQueue.mutate(payload);
@@ -118,6 +154,10 @@ export default function AutoBroadcast() {
       delay_val: val,
       delay_unit: unit,
       send_times: stimes,
+      schedule_mode: 'slots',
+      interval_start: stimes[0] || '09:00',
+      interval_val: 3,
+      interval_unit: 'hours',
     });
     setEditingId(q.id);
     setShowForm(true);
@@ -312,50 +352,109 @@ export default function AutoBroadcast() {
                   </select>
                 </div>
 
-                {/* Multiple Send Times */}
+                {/* Send Times: slots vs interval */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="label mb-0">
-                      Send Times (IST) <span className="text-teal-600 font-semibold">— {form.send_times.length} slot{form.send_times.length > 1 ? 's' : ''}</span>
-                    </label>
-                    <button
-                      type="button"
-                      className="text-xs text-teal-600 hover:underline font-medium"
-                      onClick={() => setForm((f) => ({ ...f, send_times: [...f.send_times, '12:00'] }))}
-                    >
-                      + Add Time
-                    </button>
+                    <label className="label mb-0">Send Schedule (IST)</label>
+                    <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'slots' ? 'bg-white shadow-sm text-teal-700' : 'text-gray-500'}`}
+                        onClick={() => setForm((f) => ({ ...f, schedule_mode: 'slots' }))}
+                      >
+                        Specific Times
+                      </button>
+                      <button
+                        type="button"
+                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'interval' ? 'bg-white shadow-sm text-teal-700' : 'text-gray-500'}`}
+                        onClick={() => setForm((f) => ({ ...f, schedule_mode: 'interval' }))}
+                      >
+                        Interval
+                      </button>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    {form.send_times.map((t, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400 w-16">Slot {i + 1}</span>
-                        <input
-                          type="time"
-                          className="input flex-1"
-                          value={t}
-                          onChange={(e) => setForm((f) => {
-                            const times = [...f.send_times];
-                            times[i] = e.target.value;
-                            return { ...f, send_times: times };
-                          })}
-                        />
-                        {form.send_times.length > 1 && (
-                          <button
-                            type="button"
-                            className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
-                            onClick={() => setForm((f) => ({ ...f, send_times: f.send_times.filter((_, j) => j !== i) }))}
-                          >
-                            ×
-                          </button>
-                        )}
+
+                  {form.schedule_mode === 'slots' ? (
+                    <>
+                      <div className="flex justify-end mb-2">
+                        <button
+                          type="button"
+                          className="text-xs text-teal-600 hover:underline font-medium"
+                          onClick={() => setForm((f) => ({ ...f, send_times: [...f.send_times, '12:00'] }))}
+                        >
+                          + Add Time
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {form.products_per_day} product(s)/day split evenly across your {form.send_times.length} time slot{form.send_times.length > 1 ? 's' : ''} —
-                    {' '}~{Math.max(1, Math.round(form.products_per_day / form.send_times.length))} product(s) per slot.
-                  </p>
+                      <div className="space-y-2">
+                        {form.send_times.map((t, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 w-16">Slot {i + 1}</span>
+                            <input
+                              type="time"
+                              className="input flex-1"
+                              value={t}
+                              onChange={(e) => setForm((f) => {
+                                const times = [...f.send_times];
+                                times[i] = e.target.value;
+                                return { ...f, send_times: times };
+                              })}
+                            />
+                            {form.send_times.length > 1 && (
+                              <button
+                                type="button"
+                                className="text-red-400 hover:text-red-600 text-lg leading-none px-1"
+                                onClick={() => setForm((f) => ({ ...f, send_times: f.send_times.filter((_, j) => j !== i) }))}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        Pick exact times yourself — you control exactly when each send happens.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-gray-500">Start Time</label>
+                          <input
+                            type="time"
+                            className="input"
+                            value={form.interval_start}
+                            onChange={(e) => setForm((f) => ({ ...f, interval_start: e.target.value }))}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500">Repeat Every</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              className="input flex-1 min-w-0"
+                              min={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.min}
+                              max={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.max}
+                              value={form.interval_val}
+                              onChange={(e) => setForm((f) => ({ ...f, interval_val: Number(e.target.value) }))}
+                            />
+                            <select
+                              className="input w-28 flex-shrink-0"
+                              value={form.interval_unit}
+                              onChange={(e) => setForm((f) => ({ ...f, interval_unit: e.target.value }))}
+                            >
+                              {INTERVAL_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-2">
+                        {intervalPreviewTimes.length > 0
+                          ? <>Computed times: <strong>{intervalPreviewTimes.join(', ')}</strong> ({intervalPreviewTimes.length} of {form.products_per_day} fit before midnight)</>
+                          : 'Adjust start time / interval — no valid times fit before midnight'}
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 {/* Products per day + delay */}
@@ -363,7 +462,10 @@ export default function AutoBroadcast() {
                   <div>
                     <label className="label">Products per Day (total)</label>
                     <input type="number" min="1" max="20" className="input" value={form.products_per_day} onChange={(e) => setForm((f) => ({ ...f, products_per_day: Number(e.target.value) }))} />
-                    <p className="text-[10px] text-gray-400 mt-0.5">Split evenly across your time slots above — set this equal to the number of slots for 1 product per slot.</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      Split evenly across your {intervalPreviewTimes.length} time slot{intervalPreviewTimes.length > 1 ? 's' : ''} —
+                      {' '}~{Math.max(1, Math.round(form.products_per_day / (intervalPreviewTimes.length || 1)))} product(s) per slot.
+                    </p>
                   </div>
                   <div>
                     <label className="label">Delay Between Products (within one slot)</label>
