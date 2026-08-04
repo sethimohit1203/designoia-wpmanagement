@@ -204,13 +204,18 @@ async function checkBroadcastQueues() {
       if (!targets.length) continue;
 
       const numberId = q.number_id;
-      const perDay = q.products_per_day || 3;
+      // products_per_day is the TOTAL sent across the whole day, split evenly
+      // across however many send_times slots are configured — e.g. 4 products/day
+      // with 4 send_times means 1 product per slot, spread through the day, not
+      // 4 products bursted at every single slot.
+      const totalPerDay = q.products_per_day || 3;
+      const perSlot = Math.max(1, Math.round(totalPerDay / sendTimes.length));
       const delayMs = (q.delay_seconds || 10) * 1000;
 
       let idx = q.current_index || 0;
       let sent = 0;
 
-      for (let i = 0; i < perDay; i++) {
+      for (let i = 0; i < perSlot; i++) {
         const pid = productIds[idx % productIds.length];
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
         if (!product) { idx++; continue; }
@@ -231,7 +236,7 @@ async function checkBroadcastQueues() {
         }
 
         idx++;
-        if (i < perDay - 1) {
+        if (i < perSlot - 1) {
           await new Promise((r) => setTimeout(r, delayMs));
         }
       }

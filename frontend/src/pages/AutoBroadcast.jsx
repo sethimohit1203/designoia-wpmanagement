@@ -44,6 +44,7 @@ export default function AutoBroadcast() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [editingId, setEditingId] = useState(null);
 
   const { data: queues = [] } = useQuery({ queryKey: ['broadcast-queues'], queryFn: () => api.get('/broadcast-queue').then((r) => r.data) });
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.get('/sheets/products').then((r) => r.data) });
@@ -66,6 +67,12 @@ export default function AutoBroadcast() {
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
+  const saveEdit = useMutation({
+    mutationFn: (data) => api.put(`/broadcast-queue/${editingId}`, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['broadcast-queues'] }); setShowForm(false); setEditingId(null); setForm(EMPTY_FORM); toast.success('Schedule updated!'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
+  });
+
   const deleteQueue = useMutation({
     mutationFn: (id) => api.delete(`/broadcast-queue/${id}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['broadcast-queues'] }); toast.success('Deleted'); },
@@ -84,7 +91,7 @@ export default function AutoBroadcast() {
     e.preventDefault();
     if (!form.target_ids.length) return toast.error('Select at least one group / channel');
     if (!form.product_ids.length) return toast.error('Select at least one product');
-    createQueue.mutate({
+    const payload = {
       name: form.name,
       number_id: Number(form.number_id),
       target_ids: form.target_ids,
@@ -93,7 +100,33 @@ export default function AutoBroadcast() {
       frequency_days: Number(form.frequency_days),
       delay_seconds: toSeconds(Number(form.delay_val), form.delay_unit),
       send_times: form.send_times,
+    };
+    if (editingId) saveEdit.mutate(payload);
+    else createQueue.mutate(payload);
+  }
+
+  function startEdit(q) {
+    const stimes = (() => { try { const a = JSON.parse(q.send_times || '[]'); return a.length ? a : [q.send_time || '09:00']; } catch (_) { return [q.send_time || '09:00']; } })();
+    const { val, unit } = fromSeconds(q.delay_seconds || 10);
+    setForm({
+      name: q.name,
+      number_id: String(q.number_id),
+      target_ids: JSON.parse(q.target_ids || '[]'),
+      product_ids: JSON.parse(q.product_ids || '[]'),
+      products_per_day: q.products_per_day,
+      frequency_days: q.frequency_days,
+      delay_val: val,
+      delay_unit: unit,
+      send_times: stimes,
     });
+    setEditingId(q.id);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
   }
 
   const numberName = (id) => numbers.find((n) => n.id === Number(id))?.name || `#${id}`;
@@ -106,7 +139,7 @@ export default function AutoBroadcast() {
           <h1 className="text-xl font-bold">Auto Broadcast <span className="chip bg-purple-50 text-purple-700 ml-2">SCHEDULER</span></h1>
           <p className="text-sm text-gray-500 mt-1">Automatically send products daily to multiple groups & channels</p>
         </div>
-        <button className="btn-primary" onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>+ New Schedule</button>
+        <button className="btn-primary" onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true); }}>+ New Schedule</button>
       </div>
 
       {/* Empty state */}
@@ -164,6 +197,12 @@ export default function AutoBroadcast() {
                 </div>
                 <div className="flex gap-2 flex-shrink-0 flex-wrap">
                   <button
+                    className="chip bg-blue-50 text-blue-700 cursor-pointer text-xs px-3 py-1"
+                    onClick={() => startEdit(q)}
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
                     className={`chip cursor-pointer text-xs px-3 py-1 ${q.status === 'active' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}
                     onClick={() => updateQueue.mutate({ id: q.id, status: q.status === 'active' ? 'paused' : 'active' })}
                   >
@@ -184,7 +223,7 @@ export default function AutoBroadcast() {
 
       {/* Create modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onClick={closeForm}>
           <div className="absolute inset-0 bg-black/50" />
           <div
             className="relative bg-white rounded-2xl w-full max-w-2xl max-h-[94vh] overflow-y-auto"
@@ -192,8 +231,8 @@ export default function AutoBroadcast() {
           >
             <div className="p-6">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="font-bold text-lg">New Broadcast Schedule</h2>
-                <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+                <h2 className="font-bold text-lg">{editingId ? 'Edit Broadcast Schedule' : 'New Broadcast Schedule'}</h2>
+                <button onClick={closeForm} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -314,18 +353,20 @@ export default function AutoBroadcast() {
                     ))}
                   </div>
                   <p className="text-[10px] text-gray-400 mt-1">
-                    Each slot sends <strong>{form.products_per_day}</strong> product(s). Total per day: {form.send_times.length * form.products_per_day} products.
+                    {form.products_per_day} product(s)/day split evenly across your {form.send_times.length} time slot{form.send_times.length > 1 ? 's' : ''} —
+                    {' '}~{Math.max(1, Math.round(form.products_per_day / form.send_times.length))} product(s) per slot.
                   </p>
                 </div>
 
                 {/* Products per day + delay */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">Products per Day</label>
+                    <label className="label">Products per Day (total)</label>
                     <input type="number" min="1" max="20" className="input" value={form.products_per_day} onChange={(e) => setForm((f) => ({ ...f, products_per_day: Number(e.target.value) }))} />
+                    <p className="text-[10px] text-gray-400 mt-0.5">Split evenly across your time slots above — set this equal to the number of slots for 1 product per slot.</p>
                   </div>
                   <div>
-                    <label className="label">Delay Between Products</label>
+                    <label className="label">Delay Between Products (within one slot)</label>
                     <div className="flex gap-2">
                       <input
                         type="number"
@@ -375,9 +416,11 @@ export default function AutoBroadcast() {
                 </div>
 
                 <div className="flex gap-3 pt-1">
-                  <button type="button" className="btn-secondary flex-1" onClick={() => setShowForm(false)}>Cancel</button>
-                  <button type="submit" className="btn-primary flex-1" disabled={createQueue.isPending}>
-                    {createQueue.isPending ? 'Creating…' : '✅ Create Schedule'}
+                  <button type="button" className="btn-secondary flex-1" onClick={closeForm}>Cancel</button>
+                  <button type="submit" className="btn-primary flex-1" disabled={createQueue.isPending || saveEdit.isPending}>
+                    {editingId
+                      ? (saveEdit.isPending ? 'Saving…' : '✅ Save Changes')
+                      : (createQueue.isPending ? 'Creating…' : '✅ Create Schedule')}
                   </button>
                 </div>
               </form>

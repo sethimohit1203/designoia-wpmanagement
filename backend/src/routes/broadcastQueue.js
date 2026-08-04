@@ -24,13 +24,16 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   const {
-    status = null, number_id = null, target_ids, products_per_day = null,
-    frequency_days = null, delay_seconds = null, product_ids, send_time = null,
+    name = null, status = null, number_id = null, target_ids, products_per_day = null,
+    frequency_days = null, delay_seconds = null, product_ids, send_time = null, send_times,
   } = req.body;
   const q = db.prepare('SELECT * FROM broadcast_queues WHERE id = ?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'Not found' });
+  // send_times drives send_time too (first slot) so the legacy single-time column stays in sync.
+  const effectiveSendTime = send_times?.length ? send_times[0] : send_time;
   db.prepare(
     `UPDATE broadcast_queues SET
+      name=COALESCE(?,name),
       status=COALESCE(?,status),
       number_id=COALESCE(?,number_id),
       target_ids=COALESCE(?,target_ids),
@@ -38,12 +41,14 @@ router.put('/:id', (req, res) => {
       frequency_days=COALESCE(?,frequency_days),
       delay_seconds=COALESCE(?,delay_seconds),
       send_time=COALESCE(?,send_time),
+      send_times=COALESCE(?,send_times),
       product_ids=COALESCE(?,product_ids)
     WHERE id=?`
   ).run(
-    status, number_id,
+    name, status, number_id,
     target_ids ? JSON.stringify(target_ids) : null,
-    products_per_day, frequency_days, delay_seconds, send_time,
+    products_per_day, frequency_days, delay_seconds, effectiveSendTime,
+    send_times ? JSON.stringify(send_times) : null,
     product_ids ? JSON.stringify(product_ids) : null,
     req.params.id
   );
