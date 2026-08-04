@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 export default function Contacts() {
   const [search, setSearch]           = useState('');
@@ -92,12 +93,23 @@ export default function Contacts() {
   function handleGroup(val)  { setGroup(val);  setPage(1); }
   function handleLimit(val)  { setLimit(Number(val)); setPage(1); }
 
+  const totalContacts = groups.reduce((sum, g) => sum + g.count, 0);
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">
         Contact Manager <span className="chip bg-accent/10 text-accent ml-2">CRM</span>
         {total > 0 && <span className="text-sm font-normal text-gray-400 ml-3">{total.toLocaleString()} contacts</span>}
       </h1>
+
+      {totalContacts > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon="👥" iconBg="bg-accent/10" iconColor="text-accent" label="Total Contacts" value={totalContacts.toLocaleString()} />
+          <StatCard icon="🏷️" iconBg="bg-blue-50" iconColor="text-blue-600" label="Groups" value={groups.length} />
+          <StatCard icon="🔎" iconBg="bg-green-50" iconColor="text-wagreen" label="Showing" value={total.toLocaleString()} />
+          <StatCard icon="✅" iconBg="bg-amber-50" iconColor="text-amber-600" label="Selected" value={selected.length} />
+        </div>
+      )}
 
       {/* Add contact row */}
       <div className="card grid sm:grid-cols-5 gap-2">

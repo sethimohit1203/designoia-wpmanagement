@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 const FREQ_OPTIONS = [
   { value: 1, label: 'Every day' },
@@ -107,6 +108,21 @@ export default function AddMembers() {
         <button className="btn-primary" onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>+ New Schedule</button>
       </div>
 
+      {queues.length > 0 && (() => {
+        const activeCount = queues.filter((q) => q.status === 'active').length;
+        const totalAdded = queues.reduce((sum, q) => sum + Math.min(q.current_index || 0, JSON.parse(q.contact_ids || '[]').length), 0);
+        const totalQueued = queues.reduce((sum, q) => sum + JSON.parse(q.contact_ids || '[]').length, 0);
+        const completedCount = queues.filter((q) => q.status === 'completed').length;
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard icon="➕" iconBg="bg-accent/10" iconColor="text-accent" label="Active Schedules" value={activeCount} />
+            <StatCard icon="👥" iconBg="bg-blue-50" iconColor="text-blue-600" label="Members Added" value={`${totalAdded}/${totalQueued}`} />
+            <StatCard icon="✅" iconBg="bg-green-50" iconColor="text-wagreen" label="Completed" value={completedCount} />
+            <StatCard icon="📋" iconBg="bg-amber-50" iconColor="text-amber-600" label="Total Schedules" value={queues.length} />
+          </div>
+        );
+      })()}
+
       {/* Empty state */}
       {queues.length === 0 && !showForm && (
         <div className="card text-center py-14 text-gray-400">
@@ -150,23 +166,26 @@ export default function AddMembers() {
                 </div>
                 <div className="flex gap-2 flex-shrink-0 flex-wrap">
                   <button
-                    className="chip bg-blue-50 text-blue-700 cursor-pointer text-xs px-3 py-1"
+                    className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition disabled:opacity-50"
+                    title="Run Now"
                     onClick={() => runNow.mutate(q.id)}
                     disabled={runNow.isPending}
                   >
-                    ▶ Run Now
+                    ▶️
                   </button>
                   <button
-                    className={`chip cursor-pointer text-xs px-3 py-1 ${q.status === 'active' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}
+                    className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition"
+                    title={q.status === 'active' ? 'Pause' : 'Resume'}
                     onClick={() => updateQueue.mutate({ id: q.id, status: q.status === 'active' ? 'paused' : 'active' })}
                   >
-                    {q.status === 'active' ? '⏸ Pause' : '▶ Resume'}
+                    {q.status === 'active' ? '⏸️' : '▶️'}
                   </button>
                   <button
-                    className="chip bg-red-50 text-red-600 cursor-pointer text-xs px-3 py-1"
+                    className="w-9 h-9 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition"
+                    title="Delete"
                     onClick={() => { if (window.confirm('Delete this schedule?')) deleteQueue.mutate(q.id); }}
                   >
-                    🗑 Delete
+                    🗑️
                   </button>
                 </div>
               </div>

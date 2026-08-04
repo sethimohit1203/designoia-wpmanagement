@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 export default function Numbers() {
   const [name, setName] = useState('');
@@ -83,11 +84,24 @@ export default function Numbers() {
 
   const activeNumber = numbers.find((n) => n.id === qrFor);
 
+  const connectedCount = numbers.filter((n) => n.runtimeStatus === 'connected').length;
+  const sentToday = numbers.reduce((sum, n) => sum + (n.messages_sent_today || 0), 0);
+  const avgBanRisk = numbers.length ? Math.round(numbers.reduce((sum, n) => sum + (n.ban_risk_score || 0), 0) / numbers.length) : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Multi-Number Management <span className="chip bg-accent/10 text-accent ml-2">MULTI-WA</span></h1>
       </div>
+
+      {numbers.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon="📱" iconBg="bg-accent/10" iconColor="text-accent" label="Total Numbers" value={numbers.length} />
+          <StatCard icon="🟢" iconBg="bg-green-50" iconColor="text-wagreen" label="Connected" value={connectedCount} />
+          <StatCard icon="📤" iconBg="bg-blue-50" iconColor="text-blue-600" label="Sent Today" value={sentToday} />
+          <StatCard icon="⚠️" iconBg="bg-amber-50" iconColor="text-amber-600" label="Avg Ban Risk" value={`${avgBanRisk}%`} />
+        </div>
+      )}
 
       <div className="card flex gap-3 items-end">
         <div className="flex-1">
@@ -158,18 +172,25 @@ export default function Numbers() {
                 <button className="btn-secondary text-sm" onClick={() => disconnect.mutate(n.id)}>Disconnect</button>
               )}
               <button
-                className="btn-secondary text-sm"
-                title="Use this if Connect / Show QR keeps failing silently — clears the saved browser session and starts fresh"
+                className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition"
+                title="Reset session — use this if Connect / Show QR keeps failing silently"
                 onClick={() => { if (confirm('Reset session for this number? You will need to scan a fresh QR.')) resetSession.mutate(n.id); }}
               >
-                Reset Session
+                🔄
               </button>
-              <button className="btn-secondary text-sm" onClick={() => diagnose.mutate(n.id)}>Diagnose</button>
               <button
-                className="btn-secondary text-sm text-red-600"
+                className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition"
+                title="Diagnose connection"
+                onClick={() => diagnose.mutate(n.id)}
+              >
+                🔍
+              </button>
+              <button
+                className="w-9 h-9 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition"
+                title="Remove number"
                 onClick={() => { if (window.confirm(`Remove "${n.name}"? This deletes its saved session — you'll need to scan a new QR to reconnect this number.`)) remove.mutate(n.id); }}
               >
-                Remove
+                🗑️
               </button>
             </div>
 

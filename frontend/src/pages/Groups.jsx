@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 export default function Groups() {
   const qc = useQueryClient();
@@ -48,9 +49,22 @@ export default function Groups() {
 
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  const groupCount = groups.filter((g) => g.type !== 'channel').length;
+  const channelCount = groups.filter((g) => g.type === 'channel').length;
+  const totalReach = groups.reduce((sum, g) => sum + (g.member_count || 0), 0);
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Groups, Communities & Channels <span className="chip bg-accent/10 text-accent ml-2">GROUPS</span></h1>
+
+      {groups.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon="👥" iconBg="bg-accent/10" iconColor="text-accent" label="Groups" value={groupCount} />
+          <StatCard icon="📢" iconBg="bg-purple-50" iconColor="text-purple-600" label="Channels" value={channelCount} />
+          <StatCard icon="🌐" iconBg="bg-blue-50" iconColor="text-blue-600" label="Total Reach" value={totalReach.toLocaleString()} />
+          <StatCard icon="✅" iconBg="bg-green-50" iconColor="text-wagreen" label="Selected" value={selected.length} />
+        </div>
+      )}
 
       <div className="card flex flex-wrap gap-3 items-end">
         <div>

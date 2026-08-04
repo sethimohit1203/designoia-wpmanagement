@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 export default function Campaigns() {
   const qc = useQueryClient();
@@ -42,10 +43,22 @@ export default function Campaigns() {
   };
 
   const badgeColor = { scheduled: 'bg-amber-50 text-amber-700', sent: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700', cancelled: 'bg-gray-100 text-gray-500' };
+  const scheduledCount = campaigns.filter((c) => c.status === 'scheduled').length;
+  const sentCount = campaigns.filter((c) => c.status === 'sent').length;
+  const failedCount = campaigns.filter((c) => c.status === 'failed').length;
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Campaign Scheduler <span className="chip bg-accent/10 text-accent ml-2">AUTO</span></h1>
+
+      {campaigns.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon="🗓️" iconBg="bg-accent/10" iconColor="text-accent" label="Total Campaigns" value={campaigns.length} />
+          <StatCard icon="⏳" iconBg="bg-amber-50" iconColor="text-amber-600" label="Scheduled" value={scheduledCount} />
+          <StatCard icon="✅" iconBg="bg-green-50" iconColor="text-wagreen" label="Sent" value={sentCount} />
+          <StatCard icon="❌" iconBg="bg-red-50" iconColor="text-red-600" label="Failed" value={failedCount} />
+        </div>
+      )}
 
       <div className="card grid sm:grid-cols-2 gap-3">
         <input className="input" placeholder="Campaign name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -83,8 +96,16 @@ export default function Campaigns() {
                 <td>{c.recurrence}</td>
                 <td><span className={`chip ${badgeColor[c.status] || 'bg-gray-100'}`}>{c.status}</span></td>
                 <td className="whitespace-nowrap">
-                  {c.status === 'scheduled' && <button className="text-red-600 text-xs mr-2" onClick={() => cancel.mutate(c.id)}>Cancel</button>}
-                  <button className="text-gray-400 hover:text-red-600 text-xs" onClick={() => { if (window.confirm(`Delete campaign "${c.name}"?`)) remove.mutate(c.id); }}>Delete</button>
+                  <div className="flex gap-2 justify-end">
+                    {c.status === 'scheduled' && (
+                      <button className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 flex items-center justify-center transition" title="Cancel" onClick={() => cancel.mutate(c.id)}>
+                        ⏹️
+                      </button>
+                    )}
+                    <button className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition" title="Delete" onClick={() => { if (window.confirm(`Delete campaign "${c.name}"?`)) remove.mutate(c.id); }}>
+                      🗑️
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

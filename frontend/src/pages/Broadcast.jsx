@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 export default function Broadcast() {
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -206,8 +207,12 @@ export default function Broadcast() {
     );
   }
 
+  const pendingCount = products.filter((p) => p.status === 'Pending').length;
+  const sentCount = products.filter((p) => p.status === 'Sent').length;
+  const failedCount = products.filter((p) => p.status === 'Failed').length;
+
   return (
-    <div className="pb-24 lg:pb-0">
+    <div className="pb-24 lg:pb-0 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">
@@ -217,6 +222,15 @@ export default function Broadcast() {
           <span className="chip bg-accent text-white text-xs">{batchIds.length} selected</span>
         )}
       </div>
+
+      {products.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon="📦" iconBg="bg-accent/10" iconColor="text-accent" label="Total Products" value={products.length} />
+          <StatCard icon="⏳" iconBg="bg-amber-50" iconColor="text-amber-600" label="Pending" value={pendingCount} />
+          <StatCard icon="✅" iconBg="bg-green-50" iconColor="text-wagreen" label="Sent" value={sentCount} />
+          <StatCard icon="❌" iconBg="bg-red-50" iconColor="text-red-600" label="Failed" value={failedCount} />
+        </div>
+      )}
 
       {/* Desktop: grid with right panel */}
       <div className="hidden lg:grid lg:grid-cols-3 gap-6">
