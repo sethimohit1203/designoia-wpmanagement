@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
@@ -9,6 +9,9 @@ const mainMobile = navItems.slice(0, 4);
 
 export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const navigate = useNavigate();
 
   const { data: numbers = [] } = useQuery({
     queryKey: ['numbers'],
@@ -21,6 +24,16 @@ export default function Layout() {
     sessionStorage.removeItem('token');
     window.location.reload();
   }
+
+  // Real alerts derived from live number state — not a placeholder feed.
+  const alerts = [
+    ...numbers
+      .filter((n) => n.runtimeStatus === 'disconnected' && n.last_error)
+      .map((n) => ({ id: `err-${n.id}`, icon: '🔴', text: `${n.name} disconnected — ${n.last_error}` })),
+    ...numbers
+      .filter((n) => n.ban_risk_score > 70)
+      .map((n) => ({ id: `risk-${n.id}`, icon: '⚠️', text: `${n.name} has high ban risk (${n.ban_risk_score}%)` })),
+  ];
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -98,11 +111,63 @@ export default function Layout() {
           <div className="font-semibold text-gray-700 hidden sm:block">Designoia-WPManagement</div>
           <div className="flex items-center gap-3">
             <NumberSwitcher numbers={numbers} />
-            <button className="w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition" title="Notifications">
-              🔔
-            </button>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-indigo-700 flex items-center justify-center text-white text-sm font-bold">
-              {(numbers.find((n) => n.is_active)?.name || 'C')[0].toUpperCase()}
+
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                className="relative w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
+                title="Notifications"
+                onClick={() => { setNotifOpen((o) => !o); setAccountOpen(false); }}
+              >
+                🔔
+                {alerts.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {alerts.length}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-100 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                  <div className="px-4 py-2 border-b border-gray-100 font-semibold text-sm text-gray-700">Notifications</div>
+                  {alerts.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-gray-400">No alerts — everything looks good ✅</div>
+                  ) : (
+                    alerts.map((a) => (
+                      <div key={a.id} className="px-4 py-3 border-b border-gray-50 last:border-0 text-sm flex gap-2">
+                        <span>{a.icon}</span>
+                        <span className="text-gray-700">{a.text}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Account */}
+            <div className="relative">
+              <button
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-indigo-700 flex items-center justify-center text-white text-sm font-bold"
+                title="Account"
+                onClick={() => { setAccountOpen((o) => !o); setNotifOpen(false); }}
+              >
+                👤
+              </button>
+              {accountOpen && (
+                <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-100 rounded-lg shadow-lg z-50 overflow-hidden">
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => { setAccountOpen(false); navigate('/settings'); }}
+                  >
+                    ⚙️ Settings
+                  </button>
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                    onClick={() => { setAccountOpen(false); logout(); }}
+                  >
+                    🚪 Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
