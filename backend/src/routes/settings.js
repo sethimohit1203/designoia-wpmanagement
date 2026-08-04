@@ -2,16 +2,24 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+// Keys stored in the same `settings` table that must never round-trip through
+// this general-purpose settings API (read or write) — internal secrets, not
+// user-facing preferences.
+const RESTRICTED_KEYS = new Set(['google_refresh_token', 'dashboard_password_hash']);
+
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM settings').all();
   const obj = {};
-  for (const r of rows) obj[r.key] = r.value;
+  for (const r of rows) if (!RESTRICTED_KEYS.has(r.key)) obj[r.key] = r.value;
   res.json(obj);
 });
 
 router.put('/', (req, res) => {
   const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-  for (const [k, v] of Object.entries(req.body)) upsert.run(k, String(v));
+  for (const [k, v] of Object.entries(req.body || {})) {
+    if (RESTRICTED_KEYS.has(k)) continue;
+    upsert.run(k, String(v));
+  }
   res.json({ ok: true });
 });
 

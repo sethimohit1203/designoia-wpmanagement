@@ -21,11 +21,19 @@ export default function Campaigns() {
       toast.success('Campaign scheduled');
       setForm({ name: '', group_name: 'All', template_id: '', number_id: '', message: '', scheduled_at: '', recurrence: 'none' });
     },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to schedule campaign'),
   });
 
   const cancel = useMutation({
     mutationFn: (id) => api.post(`/campaigns/${id}/cancel`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to cancel campaign'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id) => api.delete(`/campaigns/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['campaigns'] }); toast.success('Campaign deleted'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to delete campaign'),
   });
 
   const onTemplateChange = (id) => {
@@ -74,7 +82,10 @@ export default function Campaigns() {
                 <td>{c.scheduled_at ? new Date(c.scheduled_at).toLocaleString() : '-'}</td>
                 <td>{c.recurrence}</td>
                 <td><span className={`chip ${badgeColor[c.status] || 'bg-gray-100'}`}>{c.status}</span></td>
-                <td>{c.status === 'scheduled' && <button className="text-red-600 text-xs" onClick={() => cancel.mutate(c.id)}>Cancel</button>}</td>
+                <td className="whitespace-nowrap">
+                  {c.status === 'scheduled' && <button className="text-red-600 text-xs mr-2" onClick={() => cancel.mutate(c.id)}>Cancel</button>}
+                  <button className="text-gray-400 hover:text-red-600 text-xs" onClick={() => { if (window.confirm(`Delete campaign "${c.name}"?`)) remove.mutate(c.id); }}>Delete</button>
+                </td>
               </tr>
             ))}
             {!campaigns.length && <tr><td colSpan={5} className="text-center text-gray-400 py-6">No campaigns yet</td></tr>}

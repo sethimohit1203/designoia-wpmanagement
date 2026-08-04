@@ -10,7 +10,7 @@ function detectVariables(content) {
 
 router.get('/', (req, res) => {
   const { category } = req.query;
-  const rows = category
+  const rows = category && typeof category === 'string'
     ? db.prepare('SELECT * FROM templates WHERE category = ? ORDER BY id DESC').all(category)
     : db.prepare('SELECT * FROM templates ORDER BY id DESC').all();
   res.json(rows);
@@ -36,7 +36,9 @@ router.post('/ai-generate', async (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { name, category, content } = req.body;
+  const existing = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Template not found' });
+  const { name = existing.name, category = existing.category, content = existing.content } = req.body;
   const variables = JSON.stringify(detectVariables(content));
   db.prepare('UPDATE templates SET name=?, category=?, content=?, variables=? WHERE id=?')
     .run(name, category, content, variables, req.params.id);

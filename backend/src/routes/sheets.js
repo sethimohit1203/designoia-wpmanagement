@@ -1,16 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
 const { extractSheetId, syncSheet, writeStatus, getAuthUrl, handleOAuthCallback, isConnected } = require('../services/sheetsService');
 
 // /oauth/start and /oauth/callback are hit directly by the browser (via
 // redirect) and by Google's servers — no Bearer token is available, so they
-// stay public. Every other route below requires auth.
+// can't use requireAuth. Normally `state` carries the caller's dashboard JWT
+// through Google's redirect so the callback can verify it really originated
+// from an authenticated session — but dashboard auth is temporarily disabled
+// (see server.js) so there's no JWT for the frontend to send here either.
+// ⚠️ Re-enable the two jwt.verify() checks below when auth comes back, or
+// this OAuth flow is open to anyone who knows the backend URL.
 
 router.get('/oauth/start', (req, res) => {
   try {
-    res.redirect(getAuthUrl());
+    res.redirect(getAuthUrl(req.query.token));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -40,11 +44,9 @@ router.get('/oauth/callback', async (req, res) => {
   }
 });
 
-router.get('/oauth/status', requireAuth, (req, res) => {
+router.get('/oauth/status', (req, res) => {
   res.json({ connected: isConnected() });
 });
-
-router.use(requireAuth);
 
 router.get('/configs', (req, res) => {
   res.json(db.prepare('SELECT * FROM sheets_config ORDER BY id DESC').all());

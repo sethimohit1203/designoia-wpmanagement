@@ -32,6 +32,13 @@ export default function Templates() {
       toast.success('Template saved');
       setDraft({ name: '', category: 'Marketing', content: '' });
     },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to save template'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id) => api.delete(`/templates/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['templates'] }); toast.success('Template deleted'); setPreview(null); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to delete template'),
   });
 
   return (
@@ -74,7 +81,15 @@ export default function Templates() {
             <div key={t.id} className="card cursor-pointer" onClick={() => setPreview(t)}>
               <div className="flex justify-between items-start">
                 <div className="font-medium text-sm">{t.name}</div>
-                <span className="chip bg-gray-100 text-gray-600 text-[10px]">{t.category}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="chip bg-gray-100 text-gray-600 text-[10px]">{t.category}</span>
+                  <button
+                    className="text-gray-300 hover:text-red-600 text-xs"
+                    onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete template "${t.name}"?`)) remove.mutate(t.id); }}
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
               <div className="text-xs text-gray-500 mt-1 line-clamp-3 whitespace-pre-wrap">{t.content}</div>
             </div>

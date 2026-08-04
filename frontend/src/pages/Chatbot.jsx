@@ -19,21 +19,25 @@ export default function Chatbot() {
       setForm({ keyword: '', reply: '', is_fallback: false });
       toast.success('Flow added');
     },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to add flow'),
   });
 
   const toggle = useMutation({
     mutationFn: (flow) => api.put(`/chatbot/${flow.id}`, { ...flow, enabled: flow.enabled ? 0 : 1 }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['chatbot'] }),
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to update flow'),
   });
 
   const remove = useMutation({
     mutationFn: (id) => api.delete(`/chatbot/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['chatbot'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['chatbot'] }); toast.success('Flow deleted'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to delete flow'),
   });
 
   const test = useMutation({
     mutationFn: () => api.post('/chatbot/test', { message: testMsg }),
     onSuccess: (res) => setTestReply(res.data.reply),
+    onError: (e) => toast.error(e.response?.data?.error || 'Test failed'),
   });
 
   return (
@@ -62,7 +66,7 @@ export default function Chatbot() {
                 <button onClick={() => toggle.mutate(f)} className={`chip ${f.enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                   {f.enabled ? 'ON' : 'OFF'}
                 </button>
-                <button className="text-red-600 text-xs" onClick={() => remove.mutate(f.id)}>Delete</button>
+                <button className="text-red-600 text-xs" onClick={() => { if (window.confirm('Delete this flow?')) remove.mutate(f.id); }}>Delete</button>
               </div>
             </div>
           ))}

@@ -14,7 +14,7 @@ export default function Broadcast() {
 
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.get('/sheets/products').then((r) => r.data) });
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
-  const { data: contacts = [] } = useQuery({ queryKey: ['contacts'], queryFn: () => api.get('/contacts').then((r) => r.data) });
+  const { data: contacts = [] } = useQuery({ queryKey: ['contacts', 'broadcast'], queryFn: () => api.get('/contacts', { params: { limit: 1000 } }).then((r) => r.data.rows) });
   const { data: groups = [] } = useQuery({
     queryKey: ['groups', numberId],
     queryFn: () => api.get('/groups', { params: { number_id: numberId } }).then((r) => r.data),

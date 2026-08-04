@@ -16,6 +16,12 @@ export default function Layout() {
     refetchInterval: 5000,
   });
 
+  function logout() {
+    if (!window.confirm('Log out?')) return;
+    sessionStorage.removeItem('token');
+    window.location.reload();
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Desktop sidebar */}
@@ -40,6 +46,11 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <div className="p-3 border-t border-white/10">
+          <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 transition">
+            <span>🚪</span> Logout
+          </button>
+        </div>
       </aside>
 
       {/* Mobile hamburger drawer */}
@@ -62,6 +73,9 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             ))}
+            <button onClick={logout} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 mt-2 border-t border-white/10 pt-3">
+              <span>🚪</span> Logout
+            </button>
           </aside>
         </div>
       )}

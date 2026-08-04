@@ -3,6 +3,14 @@ const db = require('../db');
 const wa = require('./waManager');
 const { syncSheet, writeStatus } = require('./sheetsService');
 
+// Queue ids currently being processed (broadcast or member queues), keyed
+// "broadcast:<id>" / "member:<id>". Prevents two overlapping runs of the
+// same queue — e.g. a cron tick that's still mid-send when the next minute's
+// tick fires, or a "Run Now" click landing while the cron tick is already
+// processing that queue — from both reading the same stale current_index
+// and double-sending / double-adding before either writes its advance back.
+const queuesInProgress = new Set();
+
 function getSetting(key, fallback) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : fallback;
@@ -182,63 +190,71 @@ async function checkBroadcastQueues() {
     const matchesTime = sendTimes.some((t) => t === currentTime);
     if (!matchesTime) continue;
 
-    const productIds = JSON.parse(q.product_ids || '[]');
-    if (!productIds.length) continue;
+    const lockKey = `broadcast:${q.id}`;
+    if (queuesInProgress.has(lockKey)) continue; // already being processed by an overlapping tick
+    queuesInProgress.add(lockKey);
 
-    // Support multiple targets (groups + channels together)
-    const targetIds = JSON.parse(q.target_ids || '[]');
-    const targets = targetIds.length > 0 ? targetIds : (q.target_id ? [q.target_id] : []);
-    if (!targets.length) continue;
+    try {
+      const productIds = JSON.parse(q.product_ids || '[]');
+      if (!productIds.length) continue;
 
-    const numberId = q.number_id;
-    const perDay = q.products_per_day || 3;
-    const delayMs = (q.delay_seconds || 10) * 1000;
+      // Support multiple targets (groups + channels together)
+      const targetIds = JSON.parse(q.target_ids || '[]');
+      const targets = targetIds.length > 0 ? targetIds : (q.target_id ? [q.target_id] : []);
+      if (!targets.length) continue;
 
-    let idx = q.current_index || 0;
-    let sent = 0;
+      const numberId = q.number_id;
+      const perDay = q.products_per_day || 3;
+      const delayMs = (q.delay_seconds || 10) * 1000;
 
-    for (let i = 0; i < perDay; i++) {
-      const pid = productIds[idx % productIds.length];
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
-      if (!product) { idx++; continue; }
+      let idx = q.current_index || 0;
+      let sent = 0;
 
-      const body = formatProductMessage(product);
+      for (let i = 0; i < perDay; i++) {
+        const pid = productIds[idx % productIds.length];
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(pid);
+        if (!product) { idx++; continue; }
 
-      // Send to every selected target
-      for (const to of targets) {
-        try {
-          await wa.sendMessage(numberId, to, body, product.image_url || null);
-          sent++;
-        } catch (e) {
-          console.error(`[Queue ${q.id}] failed product ${pid} to ${to}:`, e.message);
+        const body = formatProductMessage(product);
+
+        // Send to every selected target
+        for (const to of targets) {
+          try {
+            await wa.sendMessage(numberId, to, body, product.image_url || null);
+            sent++;
+          } catch (e) {
+            console.error(`[Queue ${q.id}] failed product ${pid} to ${to}:`, e.message);
+          }
+          if (targets.indexOf(to) < targets.length - 1) {
+            await new Promise((r) => setTimeout(r, 3000)); // 3s between targets
+          }
         }
-        if (targets.indexOf(to) < targets.length - 1) {
-          await new Promise((r) => setTimeout(r, 3000)); // 3s between targets
+
+        idx++;
+        if (i < perDay - 1) {
+          await new Promise((r) => setTimeout(r, delayMs));
         }
       }
 
-      idx++;
-      if (i < perDay - 1) {
-        await new Promise((r) => setTimeout(r, delayMs));
+      // Only advance next_send_at after the LAST slot of the day fires
+      const lastSlotTime = sendTimes.reduce((max, t) => (t > max ? t : max), '00:00');
+      const isLastSlot = currentTime === lastSlotTime;
+
+      if (isLastSlot) {
+        // Compute next IST date
+        const [y, m, d] = today.split('-').map(Number);
+        const nextIstDate = new Date(Date.UTC(y, m - 1, d + (q.frequency_days || 1)));
+        const nextDateStr = nextIstDate.toISOString().slice(0, 10);
+        db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
+          .run(idx % productIds.length, nextDateStr, q.id);
+        console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — last slot, next: ${nextDateStr}`);
+      } else {
+        db.prepare('UPDATE broadcast_queues SET current_index = ? WHERE id = ?')
+          .run(idx % productIds.length, q.id);
+        console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — more slots today`);
       }
-    }
-
-    // Only advance next_send_at after the LAST slot of the day fires
-    const lastSlotTime = sendTimes.reduce((max, t) => (t > max ? t : max), '00:00');
-    const isLastSlot = currentTime === lastSlotTime;
-
-    if (isLastSlot) {
-      // Compute next IST date
-      const [y, m, d] = today.split('-').map(Number);
-      const nextIstDate = new Date(Date.UTC(y, m - 1, d + (q.frequency_days || 1)));
-      const nextDateStr = nextIstDate.toISOString().slice(0, 10);
-      db.prepare('UPDATE broadcast_queues SET current_index = ?, next_send_at = ? WHERE id = ?')
-        .run(idx % productIds.length, nextDateStr, q.id);
-      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — last slot, next: ${nextDateStr}`);
-    } else {
-      db.prepare('UPDATE broadcast_queues SET current_index = ? WHERE id = ?')
-        .run(idx % productIds.length, q.id);
-      console.log(`[Queue ${q.id}] "${q.name}" sent ${sent} msgs — more slots today`);
+    } finally {
+      queuesInProgress.delete(lockKey);
     }
   }
 }
@@ -248,40 +264,71 @@ async function checkMemberQueues() {
   const queues = db.prepare("SELECT * FROM group_member_queues WHERE status = 'active' AND next_send_at <= ?").all(today);
 
   for (const q of queues) {
-    const contactIds = JSON.parse(q.contact_ids || '[]');
-    if (!contactIds.length) continue;
-
-    const delayMs = (q.delay_seconds ?? 10) * 1000;
-    let idx = q.current_index || 0;
-    let added = 0;
-
-    for (let i = 0; i < q.members_per_day; i++) {
-      if (idx >= contactIds.length) break;
-      const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
-      if (contact?.phone) {
-        let digits = contact.phone.replace(/\D/g, '');
-        if (digits.length === 10) digits = '91' + digits;
-        const jid = digits + '@s.whatsapp.net';
-        try {
-          await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
-          added++;
-        } catch (e) {
-          console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
-        }
-        if (i < q.members_per_day - 1 && idx + 1 < contactIds.length) {
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
-      idx++;
+    const lockKey = `member:${q.id}`;
+    if (queuesInProgress.has(lockKey)) continue; // already running (e.g. a manual "Run Now" in flight)
+    queuesInProgress.add(lockKey);
+    try {
+      await runMemberQueue(q);
+    } finally {
+      queuesInProgress.delete(lockKey);
     }
+  }
+}
 
-    const allDone = idx >= contactIds.length;
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
-    db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
-      .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
+// Shared by the midnight cron sweep above and the manual "Run Now" button
+// (backend/src/routes/memberQueue.js) — both call this through the same
+// `queuesInProgress` lock so a click can't race a concurrent cron tick.
+async function runMemberQueue(q) {
+  const contactIds = JSON.parse(q.contact_ids || '[]');
+  if (!contactIds.length) return;
 
-    console.log(`[MemberQueue ${q.id}] "${q.name}" added ${added} members — ${allDone ? 'completed' : 'active'}`);
+  const delayMs = (q.delay_seconds ?? 10) * 1000;
+  let idx = q.current_index || 0;
+  let added = 0;
+
+  for (let i = 0; i < q.members_per_day; i++) {
+    if (idx >= contactIds.length) break;
+    const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
+    if (contact?.phone) {
+      let digits = contact.phone.replace(/\D/g, '');
+      if (digits.length === 10) digits = '91' + digits;
+      const jid = digits + '@s.whatsapp.net';
+      try {
+        await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
+        added++;
+      } catch (e) {
+        console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
+      }
+      if (i < q.members_per_day - 1 && idx + 1 < contactIds.length) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    idx++;
+  }
+
+  const allDone = idx >= contactIds.length;
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+  db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
+    .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
+
+  console.log(`[MemberQueue ${q.id}] "${q.name}" added ${added} members — ${allDone ? 'completed' : 'active'}`);
+}
+
+// Used by the "Run Now" route to avoid racing a concurrent scheduler tick
+// for the same queue.
+function isQueueInProgress(id) {
+  return queuesInProgress.has(`member:${id}`);
+}
+
+async function runMemberQueueNow(q) {
+  const lockKey = `member:${q.id}`;
+  if (queuesInProgress.has(lockKey)) throw new Error('This schedule is already running');
+  queuesInProgress.add(lockKey);
+  try {
+    await runMemberQueue(q);
+  } finally {
+    queuesInProgress.delete(lockKey);
   }
 }
 
@@ -299,4 +346,4 @@ function start() {
   });
 }
 
-module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules, checkBroadcastQueues };
+module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules, checkBroadcastQueues, runMemberQueueNow };

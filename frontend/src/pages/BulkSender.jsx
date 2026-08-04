@@ -38,7 +38,25 @@ export default function BulkSender() {
     form.append('delay_seconds', delay);
     if (media) form.append('media', media);
 
-    const res = await fetch('/api/bulk/send', { method: 'POST', body: form });
+    let res;
+    try {
+      res = await fetch(`${api.defaults.baseURL}/bulk/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionStorage.getItem('token') || ''}` },
+        body: form,
+      });
+    } catch (e) {
+      toast.error('Could not reach the backend');
+      setSending(false);
+      return;
+    }
+    if (!res.ok) {
+      let msg = `Send failed (${res.status})`;
+      try { msg = (await res.json()).error || msg; } catch {}
+      toast.error(msg);
+      setSending(false);
+      return;
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';

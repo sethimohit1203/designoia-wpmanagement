@@ -215,7 +215,16 @@ router.post('/import-sheet', async (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { name, phone, group_name, tags, status, vehicle } = req.body;
+  const existing = db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Contact not found' });
+  const {
+    name = existing.name,
+    phone = existing.phone,
+    group_name = existing.group_name,
+    tags = existing.tags,
+    status = existing.status,
+    vehicle = existing.vehicle,
+  } = req.body;
   db.prepare('UPDATE contacts SET name=?, phone=?, group_name=?, tags=?, status=?, vehicle=? WHERE id=?')
     .run(name, phone, group_name, tags, status, vehicle, req.params.id);
   res.json(db.prepare('SELECT * FROM contacts WHERE id = ?').get(req.params.id));

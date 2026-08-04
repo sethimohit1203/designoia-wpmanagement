@@ -1,51 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const wa = require('../services/waManager');
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function toJid(phone) {
-  let digits = phone.replace(/\D/g, '');
-  if (digits.length === 10) digits = '91' + digits;
-  return digits + '@s.whatsapp.net';
-}
-
-async function runQueue(q) {
-  const contactIds = JSON.parse(q.contact_ids || '[]');
-  if (!contactIds.length) return;
-
-  const delayMs = (q.delay_seconds ?? 10) * 1000;
-  let idx = q.current_index || 0;
-  let added = 0;
-
-  for (let i = 0; i < q.members_per_day; i++) {
-    if (idx >= contactIds.length) break;
-    const contact = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contactIds[idx]);
-    if (contact?.phone) {
-      const jid = toJid(contact.phone);
-      try {
-        await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
-        added++;
-        console.log(`[MemberQueue ${q.id}] added ${jid} (${idx + 1}/${contactIds.length})`);
-      } catch (e) {
-        console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
-      }
-      if (i < q.members_per_day - 1 && idx + 1 < contactIds.length) {
-        await sleep(delayMs);
-      }
-    }
-    idx++;
-  }
-
-  const allDone = idx >= contactIds.length;
-  const nextDate = new Date();
-  nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
-  db.prepare('UPDATE group_member_queues SET current_index=?, next_send_at=?, status=? WHERE id=?')
-    .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
-
-  console.log(`[MemberQueue ${q.id}] cycle done — added ${added}, idx=${idx}, allDone=${allDone}`);
-}
+const { runMemberQueueNow } = require('../services/scheduler');
 
 router.get('/', (req, res) => {
   res.json(db.prepare('SELECT * FROM group_member_queues ORDER BY created_at DESC').all());
@@ -64,7 +20,7 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { status, members_per_day, frequency_days, delay_seconds } = req.body;
+  const { status = null, members_per_day = null, frequency_days = null, delay_seconds = null } = req.body;
   const q = db.prepare('SELECT * FROM group_member_queues WHERE id = ?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'Not found' });
   db.prepare(
@@ -82,7 +38,7 @@ router.post('/:id/run-now', async (req, res) => {
   const q = db.prepare('SELECT * FROM group_member_queues WHERE id = ?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true, message: `Running — will add up to ${q.members_per_day} members with ${q.delay_seconds ?? 10}s delay between each` });
-  runQueue(q).catch(console.error);
+  runMemberQueueNow(q).catch((e) => console.error(`[MemberQueue ${q.id}] run-now failed:`, e.message));
 });
 
 module.exports = router;

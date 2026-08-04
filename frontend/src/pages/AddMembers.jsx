@@ -38,23 +38,25 @@ export default function AddMembers() {
 
   const createQueue = useMutation({
     mutationFn: (data) => api.post('/member-queue', data),
-    onSuccess: () => { qc.invalidateQueries(['member-queues']); setShowForm(false); setForm(EMPTY_FORM); toast.success('Schedule created!'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-queues'] }); setShowForm(false); setForm(EMPTY_FORM); toast.success('Schedule created!'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   const updateQueue = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/member-queue/${id}`, data),
-    onSuccess: () => { qc.invalidateQueries(['member-queues']); toast.success('Updated'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-queues'] }); toast.success('Updated'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   const deleteQueue = useMutation({
     mutationFn: (id) => api.delete(`/member-queue/${id}`),
-    onSuccess: () => { qc.invalidateQueries(['member-queues']); toast.success('Deleted'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-queues'] }); toast.success('Deleted'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   const runNow = useMutation({
     mutationFn: (id) => api.post(`/member-queue/${id}/run-now`),
-    onSuccess: () => { qc.invalidateQueries(['member-queues']); toast.success('Running — members being added in background'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-queues'] }); toast.success('Running — members being added in background'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 

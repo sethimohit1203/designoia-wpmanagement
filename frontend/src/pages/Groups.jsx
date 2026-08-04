@@ -43,6 +43,7 @@ export default function Groups() {
   const send = useMutation({
     mutationFn: () => api.post('/groups/send', { number_id: Number(numberId), group_ids: selected, message, delay_seconds: delay }),
     onSuccess: () => { toast.success('Broadcast complete'); setSelected([]); setMessage(''); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Send failed'),
   });
 
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));

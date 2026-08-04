@@ -20,6 +20,7 @@ export default function Settings() {
       qc.invalidateQueries({ queryKey: ['checklist'] });
       toast.success('Settings saved');
     },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to save settings'),
   });
 
   if (!form) return <div>Loading…</div>;

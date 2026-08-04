@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './layout/Layout';
-import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Numbers from './pages/Numbers';
 import BulkSender from './pages/BulkSender';
@@ -17,11 +15,12 @@ import AutoBroadcast from './pages/AutoBroadcast';
 import AddMembers from './pages/AddMembers';
 import Settings from './pages/Settings';
 
+// ⚠️ LOGIN IS TEMPORARILY DISABLED — the dashboard is open to anyone with
+// this URL while the login/domain/TLS deployment gets sorted out. Login.jsx,
+// ResetPassword.jsx, and the backend auth routes are untouched and still
+// work; to re-enable, restore the `authed` gate below (git history has the
+// exact prior version) and put requireAuth back in backend/src/server.js.
 export default function App() {
-  const [authed, setAuthed] = useState(() => !!sessionStorage.getItem('token'));
-
-  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
-
   return (
     <Routes>
       <Route element={<Layout />}>

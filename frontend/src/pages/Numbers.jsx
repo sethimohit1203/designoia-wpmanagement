@@ -72,6 +72,15 @@ export default function Numbers() {
     onError: onErr,
   });
 
+  const diagnose = useMutation({
+    mutationFn: (id) => api.get(`/numbers/${id}/diagnose`),
+    onSuccess: (res) => {
+      const d = res.data;
+      toast(`Status: ${d.entryStatus || 'no session'} · WS: ${d.wsReadyState ?? 'n/a'} · User: ${d.user?.id || 'none'}`, { icon: '🔍', duration: 6000 });
+    },
+    onError: onErr,
+  });
+
   const activeNumber = numbers.find((n) => n.id === qrFor);
 
   return (
@@ -155,7 +164,13 @@ export default function Numbers() {
               >
                 Reset Session
               </button>
-              <button className="btn-secondary text-sm text-red-600" onClick={() => remove.mutate(n.id)}>Remove</button>
+              <button className="btn-secondary text-sm" onClick={() => diagnose.mutate(n.id)}>Diagnose</button>
+              <button
+                className="btn-secondary text-sm text-red-600"
+                onClick={() => { if (window.confirm(`Remove "${n.name}"? This deletes its saved session — you'll need to scan a new QR to reconnect this number.`)) remove.mutate(n.id); }}
+              >
+                Remove
+              </button>
             </div>
 
             {qrFor === n.id && n.qr && (

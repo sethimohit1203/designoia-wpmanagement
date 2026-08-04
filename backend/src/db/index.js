@@ -224,4 +224,16 @@ const defaultSettings = {
 const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 for (const [k, v] of Object.entries(defaultSettings)) insertSetting.run(k, v);
 
+// Bootstrap the dashboard password hash from DASHBOARD_PASSWORD on first boot only —
+// once a hash exists in the DB it's the source of truth (so a password reset via the
+// UI persists across restarts/redeploys, unlike an env var which can't be written to
+// at runtime). Requires bcryptjs; done here (not lazily) so the env var can be removed
+// after first boot without breaking login.
+const bcrypt = require('bcryptjs');
+const hasPasswordHash = db.prepare("SELECT 1 FROM settings WHERE key = 'dashboard_password_hash'").get();
+if (!hasPasswordHash && process.env.DASHBOARD_PASSWORD) {
+  const hash = bcrypt.hashSync(process.env.DASHBOARD_PASSWORD, 10);
+  insertSetting.run('dashboard_password_hash', hash);
+}
+
 module.exports = db;

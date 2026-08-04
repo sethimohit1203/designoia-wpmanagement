@@ -19,6 +19,9 @@ router.post('/caption/:productId', async (req, res) => {
 
 router.post('/send-now', async (req, res) => {
   const { product_id, number_id, target_type, target_id, caption } = req.body; // target_type: contact | group | channel
+  if (!product_id || !number_id || !target_id) {
+    return res.status(400).json({ error: 'product_id, number_id, target_id required' });
+  }
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(product_id);
   if (!product) return res.status(404).json({ error: 'product not found' });
 
@@ -41,6 +44,9 @@ router.post('/send-now', async (req, res) => {
 
 router.post('/batch-send', async (req, res) => {
   const { product_ids, number_id, target_type, target_id, target_ids, delay_seconds = 10, use_ai = true } = req.body;
+  if (!product_ids?.length || !number_id) {
+    return res.status(400).json({ error: 'product_ids and number_id required' });
+  }
 
   // Support both single target_id and multiple target_ids array
   const rawTargets = target_ids?.length ? target_ids : (target_id ? [target_id] : []);

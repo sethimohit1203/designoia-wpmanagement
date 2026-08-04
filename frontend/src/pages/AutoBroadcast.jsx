@@ -56,18 +56,20 @@ export default function AutoBroadcast() {
 
   const createQueue = useMutation({
     mutationFn: (data) => api.post('/broadcast-queue', data),
-    onSuccess: () => { qc.invalidateQueries(['broadcast-queues']); setShowForm(false); setForm(EMPTY_FORM); toast.success('Schedule created!'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['broadcast-queues'] }); setShowForm(false); setForm(EMPTY_FORM); toast.success('Schedule created!'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   const updateQueue = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/broadcast-queue/${id}`, data),
-    onSuccess: () => { qc.invalidateQueries(['broadcast-queues']); toast.success('Updated'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['broadcast-queues'] }); toast.success('Updated'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   const deleteQueue = useMutation({
     mutationFn: (id) => api.delete(`/broadcast-queue/${id}`),
-    onSuccess: () => { qc.invalidateQueries(['broadcast-queues']); toast.success('Deleted'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['broadcast-queues'] }); toast.success('Deleted'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
 
   function toggleArr(key, val) {

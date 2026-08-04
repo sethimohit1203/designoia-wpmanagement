@@ -23,7 +23,10 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const { status, number_id, target_ids, products_per_day, frequency_days, delay_seconds, product_ids, send_time } = req.body;
+  const {
+    status = null, number_id = null, target_ids, products_per_day = null,
+    frequency_days = null, delay_seconds = null, product_ids, send_time = null,
+  } = req.body;
   const q = db.prepare('SELECT * FROM broadcast_queues WHERE id = ?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'Not found' });
   db.prepare(

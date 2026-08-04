@@ -26,12 +26,13 @@ function getOAuthClient() {
   return new google.auth.OAuth2({ clientId, clientSecret, redirectUri });
 }
 
-function getAuthUrl() {
+function getAuthUrl(state) {
   const client = getOAuthClient();
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent', // forces a refresh_token to be issued every time
     scope: SCOPES,
+    state,
   });
 }
 

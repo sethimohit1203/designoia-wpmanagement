@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://api.circleoflearning.online/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://server-846238.circleoflearning.com/api/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

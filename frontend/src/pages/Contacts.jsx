@@ -12,6 +12,8 @@ export default function Contacts() {
   const [form, setForm]               = useState({ name: '', phone: '', group_name: 'All', tags: '' });
   const [sheetUrl, setSheetUrl]       = useState('');
   const [showSheetInput, setShowSheetInput] = useState(false);
+  const [editingId, setEditingId]     = useState(null);
+  const [editForm, setEditForm]       = useState({ name: '', phone: '', group_name: '', tags: '' });
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -66,6 +68,23 @@ export default function Contacts() {
     onError: onErr,
   });
 
+  const updateContact = useMutation({
+    mutationFn: () => api.put(`/contacts/${editingId}`, editForm),
+    onSuccess: () => { setEditingId(null); invalidate(); toast.success('Contact updated'); },
+    onError: onErr,
+  });
+
+  const deleteContact = useMutation({
+    mutationFn: (id) => api.delete(`/contacts/${id}`),
+    onSuccess: () => { invalidate(); toast.success('Contact deleted'); },
+    onError: onErr,
+  });
+
+  function startEdit(c) {
+    setEditingId(c.id);
+    setEditForm({ name: c.name, phone: c.phone, group_name: c.group_name, tags: c.tags });
+  }
+
   const toggleSelect = (id) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
@@ -115,7 +134,7 @@ export default function Contacts() {
             🧹 Clean Dupes
           </button>
           {selected.length > 0 && (
-            <button className="btn-secondary text-red-600" onClick={() => bulkDelete.mutate()}>
+            <button className="btn-secondary text-red-600" onClick={() => { if (window.confirm(`Delete ${selected.length} contact(s)? This cannot be undone.`)) bulkDelete.mutate(); }}>
               Delete ({selected.length})
             </button>
           )}
@@ -157,25 +176,44 @@ export default function Contacts() {
           <thead>
             <tr className="text-left text-gray-500 border-b">
               <th className="py-2 w-8"></th>
-              <th>Name</th><th>Phone</th><th>Group</th><th>Tags</th><th>Status</th>
+              <th>Name</th><th>Phone</th><th>Group</th><th>Tags</th><th>Status</th><th className="w-20"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={6} className="text-center text-gray-400 py-6">Loading…</td></tr>
+              <tr><td colSpan={7} className="text-center text-gray-400 py-6">Loading…</td></tr>
             )}
             {!isLoading && contacts.map((c) => (
-              <tr key={c.id} className="border-b last:border-0">
-                <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleSelect(c.id)} /></td>
-                <td className="py-2">{c.name}</td>
-                <td>{c.phone}</td>
-                <td>{c.group_name}</td>
-                <td>{c.tags}</td>
-                <td><span className={`chip ${c.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.status}</span></td>
-              </tr>
+              editingId === c.id ? (
+                <tr key={c.id} className="border-b last:border-0 bg-teal-50/40">
+                  <td></td>
+                  <td className="py-2"><input className="input py-1" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
+                  <td><input className="input py-1" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} /></td>
+                  <td><input className="input py-1" value={editForm.group_name} onChange={(e) => setEditForm({ ...editForm, group_name: e.target.value })} /></td>
+                  <td><input className="input py-1" value={editForm.tags} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })} /></td>
+                  <td><span className={`chip ${c.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.status}</span></td>
+                  <td className="whitespace-nowrap">
+                    <button className="text-teal-600 text-xs font-medium mr-2" disabled={updateContact.isPending} onClick={() => updateContact.mutate()}>Save</button>
+                    <button className="text-gray-400 text-xs" onClick={() => setEditingId(null)}>Cancel</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={c.id} className="border-b last:border-0">
+                  <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleSelect(c.id)} /></td>
+                  <td className="py-2">{c.name}</td>
+                  <td>{c.phone}</td>
+                  <td>{c.group_name}</td>
+                  <td>{c.tags}</td>
+                  <td><span className={`chip ${c.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.status}</span></td>
+                  <td className="whitespace-nowrap">
+                    <button className="text-gray-400 hover:text-teal-600 text-xs mr-2" onClick={() => startEdit(c)}>✏️</button>
+                    <button className="text-gray-400 hover:text-red-600 text-xs" onClick={() => { if (window.confirm(`Delete ${c.name}?`)) deleteContact.mutate(c.id); }}>🗑️</button>
+                  </td>
+                </tr>
+              )
             ))}
             {!isLoading && !contacts.length && (
-              <tr><td colSpan={6} className="text-center text-gray-400 py-6">No contacts yet</td></tr>
+              <tr><td colSpan={7} className="text-center text-gray-400 py-6">No contacts yet</td></tr>
             )}
           </tbody>
         </table>

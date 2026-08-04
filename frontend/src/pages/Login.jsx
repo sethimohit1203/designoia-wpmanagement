@@ -6,6 +6,8 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -20,6 +22,19 @@ export default function Login({ onLogin }) {
       setPassword('');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleForgot() {
+    setForgotLoading(true);
+    setError('');
+    try {
+      await api.post('/auth/forgot-password');
+      setForgotSent(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not send reset link');
+    } finally {
+      setForgotLoading(false);
     }
   }
 
@@ -58,6 +73,20 @@ export default function Login({ onLogin }) {
             {loading ? 'Signing In…' : 'Sign In'}
           </button>
         </form>
+        <div className="text-center mt-4">
+          {forgotSent ? (
+            <p className="text-xs text-green-600">Reset link sent — check the admin inbox (link expires in 15 min).</p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleForgot}
+              disabled={forgotLoading}
+              className="text-xs text-gray-400 hover:text-teal-600 disabled:opacity-60"
+            >
+              {forgotLoading ? 'Sending…' : 'Forgot password?'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

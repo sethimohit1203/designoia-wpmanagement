@@ -73,7 +73,7 @@ export default function Sheets() {
               ? '✅ Google account connected.'
               : 'Connect your Google account once, then paste any Sheet URL you own or can edit.'}
           </p>
-          <a href={`${api.defaults.baseURL}/sheets/oauth/start`} className="btn-secondary text-sm whitespace-nowrap">
+          <a href={`${api.defaults.baseURL}/sheets/oauth/start?token=${encodeURIComponent(sessionStorage.getItem('token') || '')}`} className="btn-secondary text-sm whitespace-nowrap">
             {oauthStatus?.connected ? 'Reconnect Google' : 'Connect Google Account'}
           </a>
         </div>
