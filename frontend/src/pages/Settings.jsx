@@ -30,7 +30,7 @@ export default function Settings() {
   return (
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-4">
-        <h1 className="text-xl font-bold">Settings & Anti-Ban <span className="chip bg-green-50 text-green-700 ml-2">SAFE</span></h1>
+        <h1 className="text-xl font-bold">Settings & Anti-Ban <span className="chip bg-accent/10 text-accent ml-2">SAFE</span></h1>
 
         <div className="card space-y-3">
           <h2 className="font-semibold text-sm">Business Profile</h2>

@@ -45,7 +45,7 @@ export default function Campaigns() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Campaign Scheduler <span className="chip bg-orange-50 text-orange-700 ml-2">AUTO</span></h1>
+      <h1 className="text-xl font-bold">Campaign Scheduler <span className="chip bg-accent/10 text-accent ml-2">AUTO</span></h1>
 
       <div className="card grid sm:grid-cols-2 gap-3">
         <input className="input" placeholder="Campaign name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

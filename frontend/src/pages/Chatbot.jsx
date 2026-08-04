@@ -43,7 +43,7 @@ export default function Chatbot() {
   return (
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-4">
-        <h1 className="text-xl font-bold">Chatbot / Auto-Reply <span className="chip bg-teal-50 text-teal-700 ml-2">BOT</span></h1>
+        <h1 className="text-xl font-bold">Chatbot / Auto-Reply <span className="chip bg-accent/10 text-accent ml-2">BOT</span></h1>
 
         <div className="card grid sm:grid-cols-2 gap-2">
           <input className="input" placeholder="Keyword (e.g. 1, price, hello)" value={form.keyword} onChange={(e) => setForm({ ...form, keyword: e.target.value })} disabled={form.is_fallback} />

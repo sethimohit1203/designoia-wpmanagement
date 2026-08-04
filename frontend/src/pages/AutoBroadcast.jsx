@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import StatCard from '../components/StatCard';
 
 const FREQ_OPTIONS = [
   { value: 1, label: 'Every day' },
@@ -9,14 +10,6 @@ const FREQ_OPTIONS = [
   { value: 3, label: 'Every 3 days' },
   { value: 7, label: 'Weekly' },
 ];
-
-// Only used to display the delay stored on existing queues (created before the
-// "1 product per slot, no configurable delay" simplification) on the queue card.
-function fromSeconds(sec) {
-  if (sec >= 3600 && sec % 3600 === 0) return { val: sec / 3600, unit: 'hours' };
-  if (sec >= 60 && sec % 60 === 0) return { val: sec / 60, unit: 'minutes' };
-  return { val: sec, unit: 'seconds' };
-}
 
 const INTERVAL_UNITS = [
   { value: 'minutes', label: 'Minutes', min: 5, max: 1440 },
@@ -63,6 +56,8 @@ export default function AutoBroadcast() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const { data: queues = [] } = useQuery({ queryKey: ['broadcast-queues'], queryFn: () => api.get('/broadcast-queue').then((r) => r.data) });
   const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => api.get('/sheets/products').then((r) => r.data) });
@@ -161,16 +156,62 @@ export default function AutoBroadcast() {
 
   const numberName = (id) => numbers.find((n) => n.id === Number(id))?.name || `#${id}`;
 
+  // Stat row — real numbers derived from the actual queue data on this page.
+  const activeCount = queues.filter((q) => q.status === 'active').length;
+  const totalGroups = new Set(queues.flatMap((q) => { try { return JSON.parse(q.target_ids || '[]'); } catch (_) { return []; } })).size;
+  const productsSent = queues.reduce((sum, q) => sum + (q.current_index || 0), 0);
+  const nextQueue = queues
+    .filter((q) => q.status === 'active' && q.next_send_at)
+    .sort((a, b) => a.next_send_at.localeCompare(b.next_send_at))[0];
+  const nextSendTime = nextQueue
+    ? (() => { try { const a = JSON.parse(nextQueue.send_times || '[]'); return a[0] || nextQueue.send_time || '—'; } catch (_) { return nextQueue.send_time || '—'; } })()
+    : '—';
+
+  const filteredQueues = queues.filter((q) => {
+    if (statusFilter !== 'all' && q.status !== statusFilter) return false;
+    if (search && !q.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">Auto Broadcast <span className="chip bg-purple-50 text-purple-700 ml-2">SCHEDULER</span></h1>
+          <h1 className="text-xl font-bold">Auto Broadcast <span className="chip bg-accent/10 text-accent ml-2">Scheduler</span></h1>
           <p className="text-sm text-gray-500 mt-1">Automatically send products daily to multiple groups & channels</p>
         </div>
         <button className="btn-primary" onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true); }}>+ New Schedule</button>
       </div>
+
+      {/* Stat row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon="📅" iconBg="bg-accent/10" iconColor="text-accent" label="Active Schedules" value={activeCount} />
+        <StatCard icon="👥" iconBg="bg-blue-50" iconColor="text-blue-600" label="Target Groups" value={totalGroups} />
+        <StatCard icon="📤" iconBg="bg-green-50" iconColor="text-wagreen" label="Products Sent" value={productsSent} />
+        <StatCard icon="🕐" iconBg="bg-amber-50" iconColor="text-amber-600" label="Next Send" value={nextSendTime} delta={nextQueue?.next_send_at} />
+      </div>
+
+      {/* Search + filter */}
+      {queues.length > 0 && (
+        <div className="card flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-semibold text-gray-800">Your Schedules</h2>
+          <div className="flex gap-2">
+            <input
+              className="input w-56"
+              placeholder="Search schedules…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select className="input w-36" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Empty state */}
       {queues.length === 0 && !showForm && (
@@ -181,39 +222,74 @@ export default function AutoBroadcast() {
         </div>
       )}
 
+      {queues.length > 0 && filteredQueues.length === 0 && (
+        <div className="card text-center py-10 text-gray-400">No schedules match your search/filter</div>
+      )}
+
       {/* Queue cards */}
       <div className="space-y-4">
-        {queues.map((q) => {
+        {filteredQueues.map((q) => {
           const pids = JSON.parse(q.product_ids || '[]');
           const tids = JSON.parse(q.target_ids || '[]');
           const stimes = (() => { try { const a = JSON.parse(q.send_times || '[]'); return a.length ? a : [q.send_time || '09:00']; } catch (_) { return [q.send_time || '09:00']; } })();
           const total = pids.length;
           const cur = (q.current_index || 0) % (total || 1);
-          const { val: dVal, unit: dUnit } = fromSeconds(q.delay_seconds || 10);
 
           return (
             <div key={q.id} className="card">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex items-start gap-4 flex-wrap">
+                {/* Thumbnail */}
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-accent/80 to-indigo-700 flex items-center justify-center text-2xl text-white flex-shrink-0">
+                  📦
+                </div>
+
                 <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold">{q.name}</h3>
-                    <span className={`chip text-xs ${q.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{q.status}</span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold">{q.name}</h3>
+                      <span className={`chip text-xs font-medium ${q.status === 'active' ? 'bg-green-100 text-green-700' : q.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {q.status.charAt(0).toUpperCase() + q.status.slice(1)}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        className="w-8 h-8 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 flex items-center justify-center transition"
+                        title="Edit"
+                        onClick={() => startEdit(q)}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition"
+                        title={q.status === 'active' ? 'Pause' : 'Resume'}
+                        onClick={() => updateQueue.mutate({ id: q.id, status: q.status === 'active' ? 'paused' : 'active' })}
+                      >
+                        {q.status === 'active' ? '⏸️' : '▶️'}
+                      </button>
+                      <button
+                        className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition"
+                        title="Delete"
+                        onClick={() => { if (window.confirm('Delete this schedule?')) deleteQueue.mutate(q.id); }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                   <div className="text-sm text-gray-500">
                     📱 {numberName(q.number_id)} · 🕐 {stimes.join(', ')} · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''}
                   </div>
                   <div className="text-sm text-gray-500">
-                    📦 {q.products_per_day}/day · ⏱ {dVal} {dUnit} delay · 🎯 {tids.length || 1} target{(tids.length || 1) > 1 ? 's' : ''}
+                    📦 {q.products_per_day}/day · 🎯 {tids.length || 1} target{(tids.length || 1) > 1 ? 's' : ''}
                   </div>
                   {tids.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {tids.slice(0, 3).map((t) => (
-                        <span key={t} className="chip bg-blue-50 text-blue-600 text-[10px]">{t.substring(0, 15)}…</span>
+                        <span key={t} className="chip bg-accent/10 text-accent text-[10px]">{t.substring(0, 15)}…</span>
                       ))}
                       {tids.length > 3 && <span className="chip bg-gray-100 text-gray-500 text-[10px]">+{tids.length - 3} more</span>}
                     </div>
                   )}
-                  <div className="text-xs text-gray-400">📅 Next: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></div>
+                  <div className="text-xs text-gray-400">📅 Next send: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></div>
                   {/* Progress */}
                   <div>
                     <div className="flex justify-between text-[10px] text-gray-400 mb-1">
@@ -221,29 +297,9 @@ export default function AutoBroadcast() {
                       <span>{total ? Math.round((cur / total) * 100) : 0}%</span>
                     </div>
                     <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-teal-500 rounded-full" style={{ width: `${total ? Math.round((cur / total) * 100) : 0}%` }} />
+                      <div className="h-full bg-accent rounded-full" style={{ width: `${total ? Math.round((cur / total) * 100) : 0}%` }} />
                     </div>
                   </div>
-                </div>
-                <div className="flex gap-2 flex-shrink-0 flex-wrap">
-                  <button
-                    className="chip bg-blue-50 text-blue-700 cursor-pointer text-xs px-3 py-1"
-                    onClick={() => startEdit(q)}
-                  >
-                    ✏️ Edit
-                  </button>
-                  <button
-                    className={`chip cursor-pointer text-xs px-3 py-1 ${q.status === 'active' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}
-                    onClick={() => updateQueue.mutate({ id: q.id, status: q.status === 'active' ? 'paused' : 'active' })}
-                  >
-                    {q.status === 'active' ? '⏸ Pause' : '▶ Resume'}
-                  </button>
-                  <button
-                    className="chip bg-red-50 text-red-600 cursor-pointer text-xs px-3 py-1"
-                    onClick={() => { if (window.confirm('Delete this schedule?')) deleteQueue.mutate(q.id); }}
-                  >
-                    🗑 Delete
-                  </button>
                 </div>
               </div>
             </div>
@@ -285,7 +341,7 @@ export default function AutoBroadcast() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="label mb-0">
-                      Groups &amp; Channels <span className="text-teal-600 font-semibold">({form.target_ids.length} selected)</span>
+                      Groups &amp; Channels <span className="text-accent font-semibold">({form.target_ids.length} selected)</span>
                     </label>
                     {form.target_ids.length > 0 && (
                       <button type="button" className="text-xs text-red-500 hover:underline" onClick={() => setForm((f) => ({ ...f, target_ids: [] }))}>Clear all</button>
@@ -302,13 +358,13 @@ export default function AutoBroadcast() {
                         <>
                           <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider sticky top-0">👥 Groups</div>
                           {groups.filter((g) => g.type !== 'channel').map((g) => (
-                            <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${form.target_ids.includes(g.wa_id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+                            <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${form.target_ids.includes(g.wa_id) ? 'bg-accent/10' : 'hover:bg-gray-50'}`}>
                               <input type="checkbox" checked={form.target_ids.includes(g.wa_id)} onChange={() => toggleArr('target_ids', g.wa_id)} />
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium truncate">{g.name}</div>
                                 <div className="text-xs text-gray-400">{g.member_count} members</div>
                               </div>
-                              {form.target_ids.includes(g.wa_id) && <span className="text-teal-500 text-sm">✓</span>}
+                              {form.target_ids.includes(g.wa_id) && <span className="text-accent text-sm">✓</span>}
                             </label>
                           ))}
                         </>
@@ -349,14 +405,14 @@ export default function AutoBroadcast() {
                     <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
                       <button
                         type="button"
-                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'slots' ? 'bg-white shadow-sm text-teal-700' : 'text-gray-500'}`}
+                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'slots' ? 'bg-white shadow-sm text-accent' : 'text-gray-500'}`}
                         onClick={() => setForm((f) => ({ ...f, schedule_mode: 'slots' }))}
                       >
                         Specific Times
                       </button>
                       <button
                         type="button"
-                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'interval' ? 'bg-white shadow-sm text-teal-700' : 'text-gray-500'}`}
+                        className={`text-xs font-medium px-3 py-1 rounded-md transition-colors ${form.schedule_mode === 'interval' ? 'bg-white shadow-sm text-accent' : 'text-gray-500'}`}
                         onClick={() => setForm((f) => ({ ...f, schedule_mode: 'interval' }))}
                       >
                         Interval
@@ -369,7 +425,7 @@ export default function AutoBroadcast() {
                       <div className="flex justify-end mb-2">
                         <button
                           type="button"
-                          className="text-xs text-teal-600 hover:underline font-medium"
+                          className="text-xs text-accent hover:underline font-medium"
                           onClick={() => setForm((f) => ({ ...f, send_times: [...f.send_times, '12:00'] }))}
                         >
                           + Add Time
@@ -462,10 +518,10 @@ export default function AutoBroadcast() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="label mb-0">
-                      Products to Cycle Through <span className="text-teal-600 font-semibold">({form.product_ids.length} selected)</span>
+                      Products to Cycle Through <span className="text-accent font-semibold">({form.product_ids.length} selected)</span>
                     </label>
                     <div className="flex gap-3 text-xs">
-                      <button type="button" className="text-teal-600 hover:underline font-medium" onClick={selectAllProducts}>Select All</button>
+                      <button type="button" className="text-accent hover:underline font-medium" onClick={selectAllProducts}>Select All</button>
                       {form.product_ids.length > 0 && (
                         <button type="button" className="text-red-500 hover:underline" onClick={() => setForm((f) => ({ ...f, product_ids: [] }))}>Clear</button>
                       )}
@@ -473,7 +529,7 @@ export default function AutoBroadcast() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto border border-gray-200 rounded-lg p-2">
                     {products.map((p) => (
-                      <label key={p.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors text-xs ${form.product_ids.includes(p.id) ? 'border-teal-400 bg-teal-50' : 'border-gray-100 hover:bg-gray-50'}`}>
+                      <label key={p.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer border transition-colors text-xs ${form.product_ids.includes(p.id) ? 'border-accent bg-accent/10' : 'border-gray-100 hover:bg-gray-50'}`}>
                         <input type="checkbox" checked={form.product_ids.includes(p.id)} onChange={() => toggleArr('product_ids', p.id)} className="flex-shrink-0" />
                         <div className="min-w-0">
                           <div className="font-medium truncate">{p.product_name}</div>
@@ -503,6 +559,24 @@ export default function AutoBroadcast() {
           </div>
         </div>
       )}
+
+      {/* Feature highlights */}
+      <div className="card grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { icon: '🕐', color: 'text-accent', bg: 'bg-accent/10', title: 'Smart Scheduling', desc: 'Pick exact times or an interval — your call' },
+          { icon: '🔀', color: 'text-blue-600', bg: 'bg-blue-50', title: 'Multi-Target', desc: 'Send to multiple groups & channels at once' },
+          { icon: '📈', color: 'text-wagreen', bg: 'bg-green-50', title: 'Live Progress', desc: 'Track cycle position for every schedule' },
+          { icon: '🔒', color: 'text-purple-600', bg: 'bg-purple-50', title: 'Secure & Reliable', desc: 'Runs safely against WhatsApp anti-ban limits' },
+        ].map((f) => (
+          <div key={f.title} className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0 ${f.bg} ${f.color}`}>{f.icon}</div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800">{f.title}</div>
+              <div className="text-xs text-gray-400 leading-tight">{f.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

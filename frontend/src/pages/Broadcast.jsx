@@ -73,13 +73,13 @@ export default function Broadcast() {
           <>
             <div className="px-3 py-1 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">👥 Groups</div>
             {wGroups.map((g) => (
-              <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(g.wa_id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+              <label key={g.wa_id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(g.wa_id) ? 'bg-accent/10' : 'hover:bg-gray-50'}`}>
                 <input type="checkbox" checked={targetIds.includes(g.wa_id)} onChange={() => toggleTarget(g.wa_id)} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{g.name}</div>
                   <div className="text-xs text-gray-400">{g.member_count} members</div>
                 </div>
-                {targetIds.includes(g.wa_id) && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
+                {targetIds.includes(g.wa_id) && <span className="text-accent text-sm flex-shrink-0">✓</span>}
               </label>
             ))}
           </>
@@ -109,13 +109,13 @@ export default function Broadcast() {
         {contacts.length === 0
           ? <div className="p-3 text-sm text-gray-400">No contacts — add via Contacts page</div>
           : contacts.map((c) => (
-            <label key={c.id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(String(c.id)) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+            <label key={c.id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors ${targetIds.includes(String(c.id)) ? 'bg-accent/10' : 'hover:bg-gray-50'}`}>
               <input type="checkbox" checked={targetIds.includes(String(c.id))} onChange={() => toggleTarget(String(c.id))} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{c.name}</div>
                 <div className="text-xs text-gray-400">{c.phone}</div>
               </div>
-              {targetIds.includes(String(c.id)) && <span className="text-teal-500 text-sm flex-shrink-0">✓</span>}
+              {targetIds.includes(String(c.id)) && <span className="text-accent text-sm flex-shrink-0">✓</span>}
             </label>
           ))}
       </div>
@@ -145,7 +145,7 @@ export default function Broadcast() {
         <div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-gray-500 font-medium">
-              {targetIds.length > 0 ? <span className="text-teal-600 font-semibold">{targetIds.length} selected</span> : 'Select targets'}
+              {targetIds.length > 0 ? <span className="text-accent font-semibold">{targetIds.length} selected</span> : 'Select targets'}
             </span>
             {targetIds.length > 0 && (
               <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => setTargetIds([])}>Clear</button>
@@ -156,7 +156,7 @@ export default function Broadcast() {
 
         {/* Selected product info */}
         {selectedProduct && (
-          <div className="bg-teal-50 border border-teal-200 rounded-lg p-2 text-xs text-teal-800">
+          <div className="bg-accent/10 border border-accent/30 rounded-lg p-2 text-xs text-accent">
             📦 <span className="font-medium">{selectedProduct.product_name}</span>
             {' — '}₹{selectedProduct.price}
           </div>
@@ -211,7 +211,7 @@ export default function Broadcast() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">
-          Product Broadcast <span className="chip bg-teal-50 text-teal-700 ml-2">BROADCAST</span>
+          Product Broadcast <span className="chip bg-accent/10 text-accent ml-2">BROADCAST</span>
         </h1>
         {batchIds.length > 0 && (
           <span className="chip bg-accent text-white text-xs">{batchIds.length} selected</span>
@@ -236,12 +236,12 @@ export default function Broadcast() {
 
       {/* Mobile FAB */}
       <button
-        className="lg:hidden fixed bottom-20 right-4 z-40 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white rounded-full px-5 py-3.5 shadow-xl font-semibold text-sm flex items-center gap-2"
+        className="lg:hidden fixed bottom-20 right-4 z-40 bg-accent hover:bg-accent/90 active:bg-accent/90 text-white rounded-full px-5 py-3.5 shadow-xl font-semibold text-sm flex items-center gap-2"
         onClick={() => setShowPanel(true)}
       >
         📤 Send
         {(batchIds.length > 0 || selectedProduct) && (
-          <span className="bg-white text-teal-700 rounded-full w-5 h-5 text-xs font-bold flex items-center justify-center">
+          <span className="bg-white text-accent rounded-full w-5 h-5 text-xs font-bold flex items-center justify-center">
             {batchIds.length || 1}
           </span>
         )}

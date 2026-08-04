@@ -21,13 +21,21 @@ export default function NumberSwitcher({ numbers }) {
     return <span className="chip bg-gray-100 text-gray-500">No numbers connected</span>;
   }
 
+  const isConnected = (active?.runtimeStatus || active?.status) === 'connected';
+
   return (
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="chip bg-wagreen/10 text-wagreen flex items-center gap-2"
+        className="flex items-center gap-2 pl-2 pr-3 py-1 rounded-lg hover:bg-gray-50 transition"
       >
-        🟢 {active?.name || 'Select number'} ({active?.runtimeStatus || active?.status})
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isConnected ? 'bg-wagreen' : 'bg-gray-300'}`} />
+        <span className="text-left leading-tight">
+          <span className="block text-sm font-semibold text-gray-800">{active?.name || 'Select number'}</span>
+          <span className={`block text-xs ${isConnected ? 'text-wagreen' : 'text-gray-400'}`}>
+            {active?.runtimeStatus || active?.status || 'disconnected'}
+          </span>
+        </span>
       </button>
       {open && (
         <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-50">

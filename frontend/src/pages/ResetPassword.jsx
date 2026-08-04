@@ -41,13 +41,13 @@ export default function ResetPassword() {
         ) : done ? (
           <div className="text-center space-y-3">
             <p className="text-sm text-green-600">Password updated. You can log in now.</p>
-            <a href="/" className="inline-block text-sm text-teal-600 hover:underline">Back to login</a>
+            <a href="/" className="inline-block text-sm text-accent hover:underline">Back to login</a>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <input
               type="password"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               placeholder="New password (min 8 characters)"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -55,7 +55,7 @@ export default function ResetPassword() {
             />
             <input
               type="password"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               placeholder="Confirm new password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
@@ -64,7 +64,7 @@ export default function ResetPassword() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
+              className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
             >
               {loading ? 'Updating…' : 'Set New Password'}
             </button>

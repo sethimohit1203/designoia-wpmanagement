@@ -95,7 +95,7 @@ export default function Contacts() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">
-        Contact Manager <span className="chip bg-teal-50 text-teal-700 ml-2">CRM</span>
+        Contact Manager <span className="chip bg-accent/10 text-accent ml-2">CRM</span>
         {total > 0 && <span className="text-sm font-normal text-gray-400 ml-3">{total.toLocaleString()} contacts</span>}
       </h1>
 
@@ -185,7 +185,7 @@ export default function Contacts() {
             )}
             {!isLoading && contacts.map((c) => (
               editingId === c.id ? (
-                <tr key={c.id} className="border-b last:border-0 bg-teal-50/40">
+                <tr key={c.id} className="border-b last:border-0 bg-accent/10/40">
                   <td></td>
                   <td className="py-2"><input className="input py-1" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></td>
                   <td><input className="input py-1" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} /></td>
@@ -193,7 +193,7 @@ export default function Contacts() {
                   <td><input className="input py-1" value={editForm.tags} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })} /></td>
                   <td><span className={`chip ${c.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.status}</span></td>
                   <td className="whitespace-nowrap">
-                    <button className="text-teal-600 text-xs font-medium mr-2" disabled={updateContact.isPending} onClick={() => updateContact.mutate()}>Save</button>
+                    <button className="text-accent text-xs font-medium mr-2" disabled={updateContact.isPending} onClick={() => updateContact.mutate()}>Save</button>
                     <button className="text-gray-400 text-xs" onClick={() => setEditingId(null)}>Cancel</button>
                   </td>
                 </tr>
@@ -206,7 +206,7 @@ export default function Contacts() {
                   <td>{c.tags}</td>
                   <td><span className={`chip ${c.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.status}</span></td>
                   <td className="whitespace-nowrap">
-                    <button className="text-gray-400 hover:text-teal-600 text-xs mr-2" onClick={() => startEdit(c)}>✏️</button>
+                    <button className="text-gray-400 hover:text-accent text-xs mr-2" onClick={() => startEdit(c)}>✏️</button>
                     <button className="text-gray-400 hover:text-red-600 text-xs" onClick={() => { if (window.confirm(`Delete ${c.name}?`)) deleteContact.mutate(c.id); }}>🗑️</button>
                   </td>
                 </tr>

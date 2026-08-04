@@ -64,7 +64,7 @@ export default function Sheets() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Google Sheets Sync <span className="chip bg-orange-50 text-orange-700 ml-2">SHEETS</span></h1>
+      <h1 className="text-xl font-bold">Google Sheets Sync <span className="chip bg-accent/10 text-accent ml-2">SHEETS</span></h1>
 
       <div className="card space-y-3">
         <div className="flex items-center justify-between">

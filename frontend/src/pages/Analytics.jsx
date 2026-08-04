@@ -19,7 +19,7 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Analytics & Reports <span className="chip bg-purple-50 text-purple-700 ml-2">DATA</span></h1>
+      <h1 className="text-xl font-bold">Analytics & Reports <span className="chip bg-accent/10 text-accent ml-2">DATA</span></h1>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {stats.map(([label, value, color]) => (

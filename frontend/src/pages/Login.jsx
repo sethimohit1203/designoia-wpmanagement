@@ -50,7 +50,7 @@ export default function Login({ onLogin }) {
           <div className="relative">
             <input
               type={show ? 'text' : 'password'}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 pr-12"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent pr-12"
               placeholder="Enter password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setError(''); }}
@@ -68,7 +68,7 @@ export default function Login({ onLogin }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
+            className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
           >
             {loading ? 'Signing In…' : 'Sign In'}
           </button>
@@ -81,7 +81,7 @@ export default function Login({ onLogin }) {
               type="button"
               onClick={handleForgot}
               disabled={forgotLoading}
-              className="text-xs text-gray-400 hover:text-teal-600 disabled:opacity-60"
+              className="text-xs text-gray-400 hover:text-accent disabled:opacity-60"
             >
               {forgotLoading ? 'Sending…' : 'Forgot password?'}
             </button>

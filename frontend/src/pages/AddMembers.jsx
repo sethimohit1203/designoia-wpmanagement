@@ -101,7 +101,7 @@ export default function AddMembers() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">Add Members <span className="chip bg-blue-50 text-blue-700 ml-2">AUTO-ADD</span></h1>
+          <h1 className="text-xl font-bold">Add Members <span className="chip bg-accent/10 text-accent ml-2">AUTO-ADD</span></h1>
           <p className="text-sm text-gray-500 mt-1">Automatically add contacts to WhatsApp groups on a schedule</p>
         </div>
         <button className="btn-primary" onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>+ New Schedule</button>
@@ -224,7 +224,7 @@ export default function AddMembers() {
                       Contacts to Add <span className="text-blue-600 font-semibold">({form.contact_ids.length} selected)</span>
                     </label>
                     <div className="flex gap-2">
-                      <button type="button" className="text-xs text-teal-600 hover:underline" onClick={selectAllContacts}>Select All</button>
+                      <button type="button" className="text-xs text-accent hover:underline" onClick={selectAllContacts}>Select All</button>
                       {form.contact_ids.length > 0 && (
                         <button type="button" className="text-xs text-red-500 hover:underline" onClick={() => setForm((f) => ({ ...f, contact_ids: [] }))}>Clear</button>
                       )}
