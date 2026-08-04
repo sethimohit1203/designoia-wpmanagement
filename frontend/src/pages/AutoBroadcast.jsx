@@ -10,18 +10,8 @@ const FREQ_OPTIONS = [
   { value: 7, label: 'Weekly' },
 ];
 
-const DELAY_UNITS = [
-  { value: 'seconds', label: 'Seconds', min: 5, max: 300 },
-  { value: 'minutes', label: 'Minutes', min: 1, max: 60 },
-  { value: 'hours',   label: 'Hours',   min: 1, max: 12 },
-];
-
-function toSeconds(val, unit) {
-  if (unit === 'minutes') return val * 60;
-  if (unit === 'hours') return val * 3600;
-  return val;
-}
-
+// Only used to display the delay stored on existing queues (created before the
+// "1 product per slot, no configurable delay" simplification) on the queue card.
 function fromSeconds(sec) {
   if (sec >= 3600 && sec % 3600 === 0) return { val: sec / 3600, unit: 'hours' };
   if (sec >= 60 && sec % 60 === 0) return { val: sec / 60, unit: 'minutes' };
@@ -61,8 +51,6 @@ const EMPTY_FORM = {
   product_ids: [],
   products_per_day: 1,
   frequency_days: 1,
-  delay_val: 10,
-  delay_unit: 'seconds',
   send_times: ['09:00'],
   schedule_mode: 'slots', // 'slots' (pick exact times) | 'interval' (start time + repeat every)
   interval_start: '09:00',
@@ -117,9 +105,14 @@ export default function AutoBroadcast() {
     setForm((f) => ({ ...f, product_ids: products.map((p) => p.id) }));
   }
 
+  // Both modes always send exactly 1 product per time slot — Specific Times mode
+  // has no separate "products/day" number to keep in sync with the times list
+  // (it's just however many times are listed); Interval mode's products/day
+  // input is really "how many times to generate."
   const intervalPreviewTimes = form.schedule_mode === 'interval'
     ? computeIntervalTimes(form.interval_start, intervalToMinutes(form.interval_val, form.interval_unit), Number(form.products_per_day) || 1)
     : form.send_times;
+  const effectiveProductsPerDay = form.schedule_mode === 'interval' ? intervalPreviewTimes.length : form.send_times.length;
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -132,9 +125,9 @@ export default function AutoBroadcast() {
       number_id: Number(form.number_id),
       target_ids: form.target_ids,
       product_ids: form.product_ids,
-      products_per_day: Number(form.products_per_day),
+      products_per_day: sendTimes.length, // 1 product per slot, always
       frequency_days: Number(form.frequency_days),
-      delay_seconds: toSeconds(Number(form.delay_val), form.delay_unit),
+      delay_seconds: 10, // only matters if a slot ever sends >1 product, which no longer happens from this UI
       send_times: sendTimes,
     };
     if (editingId) saveEdit.mutate(payload);
@@ -143,16 +136,13 @@ export default function AutoBroadcast() {
 
   function startEdit(q) {
     const stimes = (() => { try { const a = JSON.parse(q.send_times || '[]'); return a.length ? a : [q.send_time || '09:00']; } catch (_) { return [q.send_time || '09:00']; } })();
-    const { val, unit } = fromSeconds(q.delay_seconds || 10);
     setForm({
       name: q.name,
       number_id: String(q.number_id),
       target_ids: JSON.parse(q.target_ids || '[]'),
       product_ids: JSON.parse(q.product_ids || '[]'),
-      products_per_day: q.products_per_day,
+      products_per_day: stimes.length,
       frequency_days: q.frequency_days,
-      delay_val: val,
-      delay_unit: unit,
       send_times: stimes,
       schedule_mode: 'slots',
       interval_start: stimes[0] || '09:00',
@@ -412,7 +402,7 @@ export default function AutoBroadcast() {
                         ))}
                       </div>
                       <p className="text-[10px] text-gray-400 mt-1">
-                        Pick exact times yourself — you control exactly when each send happens.
+                        1 product per time slot — {form.send_times.length} product{form.send_times.length > 1 ? 's' : ''}/day total.
                       </p>
                     </>
                   ) : (
@@ -428,61 +418,44 @@ export default function AutoBroadcast() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-gray-500">Repeat Every</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="number"
-                              className="input flex-1 min-w-0"
-                              min={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.min}
-                              max={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.max}
-                              value={form.interval_val}
-                              onChange={(e) => setForm((f) => ({ ...f, interval_val: Number(e.target.value) }))}
-                            />
-                            <select
-                              className="input w-28 flex-shrink-0"
-                              value={form.interval_unit}
-                              onChange={(e) => setForm((f) => ({ ...f, interval_unit: e.target.value }))}
-                            >
-                              {INTERVAL_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-                            </select>
-                          </div>
+                          <label className="text-xs text-gray-500">Products per Day</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            className="input"
+                            value={form.products_per_day}
+                            onChange={(e) => setForm((f) => ({ ...f, products_per_day: Number(e.target.value) }))}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <label className="text-xs text-gray-500">Repeat Every</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            className="input !w-20 flex-shrink-0"
+                            min={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.min}
+                            max={INTERVAL_UNITS.find((u) => u.value === form.interval_unit)?.max}
+                            value={form.interval_val}
+                            onChange={(e) => setForm((f) => ({ ...f, interval_val: Number(e.target.value) }))}
+                          />
+                          <select
+                            className="input flex-1 min-w-0"
+                            value={form.interval_unit}
+                            onChange={(e) => setForm((f) => ({ ...f, interval_unit: e.target.value }))}
+                          >
+                            {INTERVAL_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                          </select>
                         </div>
                       </div>
                       <p className="text-[10px] text-gray-400 mt-2">
                         {intervalPreviewTimes.length > 0
-                          ? <>Computed times: <strong>{intervalPreviewTimes.join(', ')}</strong> ({intervalPreviewTimes.length} of {form.products_per_day} fit before midnight)</>
+                          ? <>1 product per slot — computed times: <strong>{intervalPreviewTimes.join(', ')}</strong>{intervalPreviewTimes.length < form.products_per_day ? ` (only ${intervalPreviewTimes.length} of ${form.products_per_day} fit before midnight)` : ''}</>
                           : 'Adjust start time / interval — no valid times fit before midnight'}
                       </p>
                     </>
                   )}
-                </div>
-
-                {/* Products per day + delay */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Products per Day (total)</label>
-                    <input type="number" min="1" max="20" className="input" value={form.products_per_day} onChange={(e) => setForm((f) => ({ ...f, products_per_day: Number(e.target.value) }))} />
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      Split evenly across your {intervalPreviewTimes.length} time slot{intervalPreviewTimes.length > 1 ? 's' : ''} —
-                      {' '}~{Math.max(1, Math.round(form.products_per_day / (intervalPreviewTimes.length || 1)))} product(s) per slot.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="label">Delay Between Products (within one slot)</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        className="input flex-1 min-w-0"
-                        min={DELAY_UNITS.find((u) => u.value === form.delay_unit)?.min}
-                        max={DELAY_UNITS.find((u) => u.value === form.delay_unit)?.max}
-                        value={form.delay_val}
-                        onChange={(e) => setForm((f) => ({ ...f, delay_val: Number(e.target.value) }))}
-                      />
-                      <select className="input w-28 flex-shrink-0" value={form.delay_unit} onChange={(e) => setForm((f) => ({ ...f, delay_unit: e.target.value }))}>
-                        {DELAY_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Products */}
@@ -512,7 +485,7 @@ export default function AutoBroadcast() {
                   </div>
                   {form.product_ids.length > 0 && (
                     <p className="text-xs text-gray-400 mt-1">
-                      {form.product_ids.length} products · {form.products_per_day}/day → full cycle in {Math.ceil(form.product_ids.length / form.products_per_day)} days
+                      {form.product_ids.length} products · {effectiveProductsPerDay}/day → full cycle in {Math.ceil(form.product_ids.length / (effectiveProductsPerDay || 1))} days
                     </p>
                   )}
                 </div>
