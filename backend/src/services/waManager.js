@@ -360,19 +360,29 @@ class WAManager extends EventEmitter {
         new Date().toISOString()
       );
     }
-    // Channels / Newsletters (WhatsApp Channels with @newsletter JIDs)
-    try {
-      const newsletters = await sock.getSubscribedNewsletters();
-      for (const nl of newsletters) {
-        const jid = nl.id;
-        const name = nl.thread_metadata?.name?.text || nl.name || 'Unknown Channel';
-        const subscribers = nl.thread_metadata?.subscriber_count || 0;
-        insert.run(numberId, jid, name, 'channel', subscribers, 1, new Date().toISOString());
+    // Channels / Newsletters (WhatsApp Channels with @newsletter JIDs).
+    // The installed Baileys version has no bulk "list my subscribed newsletters"
+    // call — channels can only be added individually via add-channel below. Guard
+    // on the method existing rather than calling-then-catching, since repeatedly
+    // hitting a nonexistent method right after connect appeared to be contributing
+    // to Baileys tearing the stream down (see git history for the disconnect bug
+    // this was fixed alongside).
+    if (typeof sock.getSubscribedNewsletters === 'function') {
+      try {
+        const newsletters = await sock.getSubscribedNewsletters();
+        for (const nl of newsletters) {
+          const jid = nl.id;
+          const name = nl.thread_metadata?.name?.text || nl.name || 'Unknown Channel';
+          const subscribers = nl.thread_metadata?.subscriber_count || 0;
+          insert.run(numberId, jid, name, 'channel', subscribers, 1, new Date().toISOString());
+        }
+        console.log(`[WA ${numberId}] fetched ${groups.length} groups + ${newsletters.length} channels`);
+      } catch (e) {
+        console.warn(`[WA ${numberId}] newsletter fetch failed: ${e.message}`);
+        console.log(`[WA ${numberId}] fetched ${groups.length} groups`);
       }
-      console.log(`[WA ${numberId}] fetched ${groups.length} groups + ${newsletters.length} channels`);
-    } catch (e) {
-      console.warn(`[WA ${numberId}] newsletter fetch skipped: ${e.message}`);
-      console.log(`[WA ${numberId}] fetched ${groups.length} groups`);
+    } else {
+      console.log(`[WA ${numberId}] fetched ${groups.length} groups (channel auto-list not supported by this Baileys version — use "Add Channel" manually)`);
     }
 
     return groups;
