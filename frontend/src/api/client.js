@@ -13,16 +13,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// ⚠️ Reload-on-401 is disabled while dashboard auth is off (see server.js) — with
+// no login gate, forcing a reload on 401 just causes a refresh loop (e.g. while
+// DNS is still migrating and some requests transiently hit a stale old backend
+// that still enforces auth). Restore this whenever auth enforcement comes back.
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
-      sessionStorage.removeItem('token');
-      // Full reload so App.jsx re-evaluates auth state and shows Login.
-      window.location.reload();
-    }
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 export default api;
