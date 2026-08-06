@@ -49,6 +49,7 @@ const EMPTY_FORM = {
   interval_start: '09:00',
   interval_val: 3,
   interval_unit: 'hours',
+  telegram_chat_id: '',
 };
 
 export default function AutoBroadcast() {
@@ -124,6 +125,7 @@ export default function AutoBroadcast() {
       frequency_days: Number(form.frequency_days),
       delay_seconds: 10, // only matters if a slot ever sends >1 product, which no longer happens from this UI
       send_times: sendTimes,
+      telegram_chat_id: form.telegram_chat_id.trim(),
     };
     if (editingId) saveEdit.mutate(payload);
     else createQueue.mutate(payload);
@@ -143,6 +145,7 @@ export default function AutoBroadcast() {
       interval_start: stimes[0] || '09:00',
       interval_val: 3,
       interval_unit: 'hours',
+      telegram_chat_id: q.telegram_chat_id || '',
     });
     setEditingId(q.id);
     setShowForm(true);
@@ -280,6 +283,7 @@ export default function AutoBroadcast() {
                   </div>
                   <div className="text-sm text-gray-500">
                     📦 {q.products_per_day}/day · 🎯 {tids.length || 1} target{(tids.length || 1) > 1 ? 's' : ''}
+                    {q.telegram_chat_id && <span className="ml-2 chip bg-blue-50 text-blue-600 text-[10px]">✈️ {q.telegram_chat_id}</span>}
                   </div>
                   {tids.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
@@ -388,6 +392,20 @@ export default function AutoBroadcast() {
                     </div>
                   )}
                   <p className="text-xs text-gray-400 mt-1">You can select multiple groups and channels — product will be sent to all of them</p>
+                </div>
+
+                {/* Telegram (optional) */}
+                <div>
+                  <label className="label">Also Post to Telegram (optional)</label>
+                  <input
+                    className="input"
+                    placeholder="@yourchannel"
+                    value={form.telegram_chat_id}
+                    onChange={(e) => setForm((f) => ({ ...f, telegram_chat_id: e.target.value }))}
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Your Telegram bot must already be added as an admin of this channel. Leave blank to skip Telegram for this schedule.
+                  </p>
                 </div>
 
                 {/* Frequency */}

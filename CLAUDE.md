@@ -112,6 +112,9 @@ mechanism, so re-enabling is a small, contained change.
 - `services/sheetsService.js` — Google Sheets OAuth + read/write via `googleapis`.
 - `services/aiService.js` — Gemini (`@google/generative-ai`) caption/reply generation.
 - `services/emailService.js` — nodemailer wrapper, sends the "Forgot password" reset link.
+- `services/telegramService.js` — Telegram Bot API wrapper (`sendTelegramMessage`/`sendTelegramPhoto`),
+  requires `TELEGRAM_BOT_TOKEN`. Bot must be added as an admin (Post Messages permission) to any
+  channel it sends to. Used by `scheduler.js` to cross-post Auto Broadcast schedules to Telegram.
 - `utils/paths.js` — resolves `dbDir`/`sessionsDir`/`uploadsDir`, honoring `DATA_DIR` for persistent-volume deployments (Railway).
 
 ### `frontend/src/`
@@ -129,7 +132,12 @@ mechanism, so re-enabling is a small, contained change.
   ordered `product_ids` list and a `current_index`; on each matching `send_time`/`send_times` slot
   (IST HH:MM, checked every minute per recent commit history) it sends `products_per_day` products
   to `target_ids` and advances the index, only rolling `next_send_at` forward after the *last* daily
-  slot fires (multi-slot-per-day support).
+  slot fires (multi-slot-per-day support). Optional `telegram_chat_id` column (e.g. `@clikixpress`) —
+  when set, the same product/moment also posts to that Telegram channel via `telegramService.js`,
+  alongside the WhatsApp targets. NULL = WhatsApp-only, the default. Set via the "Also Post to
+  Telegram" field on the Auto Broadcast create/edit form (`frontend/src/pages/AutoBroadcast.jsx`).
+  Manual one-off sends (`routes/broadcast.js`) do NOT cross-post to Telegram — this is Auto Broadcast
+  only.
 - **Member queue** (`routes/memberQueue.js`): same drip pattern for adding contacts to a WhatsApp
   group — `members_per_day` per cycle, `delay_seconds` between each add, JID built by prefixing `91`
   to bare 10-digit numbers.

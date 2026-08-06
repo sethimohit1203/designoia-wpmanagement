@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const db = require('../db');
 const wa = require('./waManager');
 const { syncSheet, writeStatus } = require('./sheetsService');
+const { sendTelegramPhoto } = require('./telegramService');
 
 // Queue ids currently being processed (broadcast or member queues), keyed
 // "broadcast:<id>" / "member:<id>". Prevents two overlapping runs of the
@@ -232,6 +233,16 @@ async function checkBroadcastQueues() {
           }
           if (targets.indexOf(to) < targets.length - 1) {
             await new Promise((r) => setTimeout(r, 3000)); // 3s between targets
+          }
+        }
+
+        // Same product, same moment — also post to the linked Telegram channel if set.
+        if (q.telegram_chat_id) {
+          try {
+            await sendTelegramPhoto(q.telegram_chat_id, product.image_url || null, body);
+            sent++;
+          } catch (e) {
+            console.error(`[Queue ${q.id}] Telegram send failed for product ${pid}:`, e.message);
           }
         }
 

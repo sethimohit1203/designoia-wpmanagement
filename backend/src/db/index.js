@@ -180,6 +180,11 @@ if (!broadcastQueueCols.includes('target_ids')) {
 if (!broadcastQueueCols.includes('send_times')) {
   db.exec("ALTER TABLE broadcast_queues ADD COLUMN send_times TEXT DEFAULT '[]'");
 }
+if (!broadcastQueueCols.includes('telegram_chat_id')) {
+  // Optional — e.g. "@clikixpress". When set, each fired slot also posts to
+  // this Telegram channel alongside the WhatsApp targets. NULL = WhatsApp only.
+  db.exec('ALTER TABLE broadcast_queues ADD COLUMN telegram_chat_id TEXT');
+}
 const memberQueueCols = db.prepare("PRAGMA table_info(group_member_queues)").all().map((c) => c.name);
 if (!memberQueueCols.includes('delay_seconds')) {
   db.exec('ALTER TABLE group_member_queues ADD COLUMN delay_seconds INTEGER DEFAULT 10');
