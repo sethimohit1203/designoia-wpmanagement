@@ -298,6 +298,8 @@ async function runMemberQueue(q) {
   const contactIds = JSON.parse(q.contact_ids || '[]');
   if (!contactIds.length) return;
 
+  db.prepare('UPDATE group_member_queues SET last_run_at = ? WHERE id = ?').run(new Date().toISOString(), q.id);
+
   const delayMs = (q.delay_seconds ?? 10) * 1000;
   let idx = q.current_index || 0;
   let added = 0;
@@ -362,4 +364,4 @@ function start() {
   });
 }
 
-module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules, checkBroadcastQueues, runMemberQueueNow };
+module.exports = { start, runCampaign, formatProductMessage, checkSheetSchedules, checkBroadcastQueues, runMemberQueueNow, isQueueInProgress };

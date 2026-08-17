@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import { navItems } from './navItems';
 import NumberSwitcher from '../components/NumberSwitcher';
+import { useTheme } from '../context/ThemeContext';
 
 const mainMobile = navItems.slice(0, 4);
 
@@ -12,6 +13,7 @@ export default function Layout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
 
   const { data: numbers = [] } = useQuery({
     queryKey: ['numbers'],
@@ -111,6 +113,15 @@ export default function Layout() {
           <div className="font-semibold text-gray-700 hidden sm:block">Designoia-WPManagement</div>
           <div className="flex items-center gap-3">
             <NumberSwitcher numbers={numbers} />
+
+            {/* Theme toggle */}
+            <button
+              className="w-9 h-9 rounded-full bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              onClick={toggleTheme}
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
 
             {/* Notifications */}
             <div className="relative">

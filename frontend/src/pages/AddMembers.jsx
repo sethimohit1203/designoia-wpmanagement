@@ -27,7 +27,11 @@ export default function AddMembers() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [contactSearch, setContactSearch] = useState('');
 
-  const { data: queues = [] } = useQuery({ queryKey: ['member-queues'], queryFn: () => api.get('/member-queue').then((r) => r.data) });
+  const { data: queues = [] } = useQuery({
+    queryKey: ['member-queues'],
+    queryFn: () => api.get('/member-queue').then((r) => r.data),
+    refetchInterval: (query) => (query.state.data?.some((q) => q.in_progress) ? 3000 : false),
+  });
   const { data: numbers = [] } = useQuery({ queryKey: ['numbers'], queryFn: () => api.get('/numbers').then((r) => r.data) });
   const { data: contactsData } = useQuery({ queryKey: ['contacts', '', 'All', 1], queryFn: () => api.get('/contacts', { params: { limit: 500 } }).then((r) => r.data) });
   const contacts = contactsData?.rows || [];
@@ -60,6 +64,17 @@ export default function AddMembers() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['member-queues'] }); toast.success('Running — members being added in background'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed'),
   });
+
+  function formatLastRun(iso) {
+    if (!iso) return 'Never run yet';
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
 
   function toggleContact(id) {
     setForm((f) => ({
@@ -147,12 +162,20 @@ export default function AddMembers() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold">{q.name}</h3>
                     <span className={`chip text-xs ${q.status === 'active' ? 'bg-green-100 text-green-700' : q.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{q.status}</span>
+                    {q.in_progress && (
+                      <span className="chip text-xs bg-blue-100 text-blue-700 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" /> Running now
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm text-gray-500">
                     📱 {numberName(q.number_id)} · 👥 {q.members_per_day}/day · every {q.frequency_days} day{q.frequency_days > 1 ? 's' : ''} · ⏱ {q.delay_seconds ?? 10}s gap
                   </div>
                   <div className="text-sm text-gray-500 truncate">🎯 {q.group_id}</div>
-                  <div className="text-xs text-gray-400">📅 Next: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></div>
+                  <div className="text-xs text-gray-400 flex flex-wrap gap-x-3">
+                    <span>📅 Next: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></span>
+                    <span>🕓 Last run: <span className="font-medium text-gray-600">{formatLastRun(q.last_run_at)}</span></span>
+                  </div>
                   {/* Progress */}
                   <div>
                     <div className="flex justify-between text-[10px] text-gray-400 mb-1">
@@ -169,7 +192,7 @@ export default function AddMembers() {
                     className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition disabled:opacity-50"
                     title="Run Now"
                     onClick={() => runNow.mutate(q.id)}
-                    disabled={runNow.isPending}
+                    disabled={runNow.isPending || q.in_progress}
                   >
                     ▶️
                   </button>

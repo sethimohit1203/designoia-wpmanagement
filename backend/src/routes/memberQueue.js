@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { runMemberQueueNow } = require('../services/scheduler');
+const { runMemberQueueNow, isQueueInProgress } = require('../services/scheduler');
 
 router.get('/', (req, res) => {
-  res.json(db.prepare('SELECT * FROM group_member_queues ORDER BY created_at DESC').all());
+  const rows = db.prepare('SELECT * FROM group_member_queues ORDER BY created_at DESC').all();
+  res.json(rows.map((q) => ({ ...q, in_progress: isQueueInProgress(q.id) })));
 });
 
 router.post('/', (req, res) => {

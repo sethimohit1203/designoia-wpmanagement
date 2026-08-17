@@ -189,6 +189,9 @@ const memberQueueCols = db.prepare("PRAGMA table_info(group_member_queues)").all
 if (!memberQueueCols.includes('delay_seconds')) {
   db.exec('ALTER TABLE group_member_queues ADD COLUMN delay_seconds INTEGER DEFAULT 10');
 }
+if (!memberQueueCols.includes('last_run_at')) {
+  db.exec('ALTER TABLE group_member_queues ADD COLUMN last_run_at TEXT');
+}
 
 const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().map((c) => c.name);
 if (!sheetsConfigCols.includes('column_map')) {

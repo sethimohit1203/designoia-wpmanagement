@@ -25,3 +25,29 @@ body {
 .input {
   @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent;
 }
+
+/* Dark mode: this app's pages were built with plain Tailwind gray/white
+   utility classes rather than dark: variants everywhere, so instead of
+   touching every page we override the common utility classes globally
+   whenever the <html> element carries the .dark class (see ThemeContext). */
+.dark body {
+  background-color: #0f1117;
+  color: #e5e7eb;
+}
+.dark .bg-white { background-color: #1a1d27 !important; }
+.dark .bg-gray-50 { background-color: #12141c !important; }
+.dark .bg-gray-100 { background-color: #232733 !important; }
+.dark .bg-gray-200 { background-color: #2a2e3a !important; }
+.dark .border-gray-50,
+.dark .border-gray-100,
+.dark .border-gray-200 { border-color: #2a2e3a !important; }
+.dark .text-gray-900 { color: #f3f4f6 !important; }
+.dark .text-gray-700 { color: #d1d5db !important; }
+.dark .text-gray-600 { color: #b0b4bd !important; }
+.dark .text-gray-500 { color: #9096a2 !important; }
+.dark .text-gray-400 { color: #767c8a !important; }
+.dark .card { background-color: #1a1d27; border-color: #2a2e3a; }
+.dark .input { background-color: #12141c; border-color: #2a2e3a; color: #e5e7eb; }
+.dark .btn-secondary { background-color: #232733; color: #e5e7eb; }
+.dark .btn-secondary:hover { background-color: #2a2e3a; }
+.dark .shadow-sm { box-shadow: none; }

@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Settings() {
   const qc = useQueryClient();
   const [form, setForm] = useState(null);
+  const { theme, setTheme } = useTheme();
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then((r) => r.data) });
   const { data: checklist = [] } = useQuery({ queryKey: ['checklist'], queryFn: () => api.get('/settings/checklist').then((r) => r.data), refetchInterval: 5000 });
@@ -31,6 +33,27 @@ export default function Settings() {
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-4">
         <h1 className="text-xl font-bold">Settings & Anti-Ban <span className="chip bg-accent/10 text-accent ml-2">SAFE</span></h1>
+
+        <div className="card space-y-3">
+          <h2 className="font-semibold text-sm">Appearance</h2>
+          <div className="flex gap-2">
+            {[
+              ['light', '☀️ Light'],
+              ['dark', '🌙 Dark'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTheme(value)}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium border transition ${
+                  theme === value ? 'bg-accent text-white border-accent' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="card space-y-3">
           <h2 className="font-semibold text-sm">Business Profile</h2>
