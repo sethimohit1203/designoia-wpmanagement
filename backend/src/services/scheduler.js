@@ -300,6 +300,11 @@ async function runMemberQueue(q) {
 
   db.prepare('UPDATE group_member_queues SET last_run_at = ? WHERE id = ?').run(new Date().toISOString(), q.id);
 
+  if (!wa.getClient(q.number_id)) {
+    console.error(`[MemberQueue ${q.id}] "${q.name}" skipped — number not connected`);
+    return;
+  }
+
   const delayMs = (q.delay_seconds ?? 10) * 1000;
   let idx = q.current_index || 0;
   let added = 0;
@@ -315,7 +320,11 @@ async function runMemberQueue(q) {
         await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
         added++;
       } catch (e) {
+        // Number dropped mid-run (or WhatsApp rejected this specific add) — stop
+        // here instead of continuing to advance idx past contacts that were
+        // never actually added.
         console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
+        break;
       }
       if (i < q.members_per_day - 1 && idx + 1 < contactIds.length) {
         await new Promise((r) => setTimeout(r, delayMs));
