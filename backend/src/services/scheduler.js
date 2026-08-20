@@ -296,18 +296,21 @@ async function checkMemberQueues() {
 // `queuesInProgress` lock so a click can't race a concurrent cron tick.
 async function runMemberQueue(q) {
   const contactIds = JSON.parse(q.contact_ids || '[]');
-  if (!contactIds.length) return;
+  const startIdx = q.current_index || 0;
+  const result = { added: 0, attempted: 0, error: null };
+  if (!contactIds.length) return result;
 
   db.prepare('UPDATE group_member_queues SET last_run_at = ? WHERE id = ?').run(new Date().toISOString(), q.id);
 
   if (!wa.getClient(q.number_id)) {
+    result.error = 'Number not connected';
+    db.prepare('UPDATE group_member_queues SET last_error = ?, last_run_added = 0 WHERE id = ?').run(result.error, q.id);
     console.error(`[MemberQueue ${q.id}] "${q.name}" skipped — number not connected`);
-    return;
+    return result;
   }
 
   const delayMs = (q.delay_seconds ?? 10) * 1000;
-  let idx = q.current_index || 0;
-  let added = 0;
+  let idx = startIdx;
 
   for (let i = 0; i < q.members_per_day; i++) {
     if (idx >= contactIds.length) break;
@@ -316,13 +319,16 @@ async function runMemberQueue(q) {
       let digits = contact.phone.replace(/\D/g, '');
       if (digits.length === 10) digits = '91' + digits;
       const jid = digits + '@s.whatsapp.net';
+      result.attempted++;
       try {
         await wa.addGroupMembers(q.number_id, q.group_id, [jid]);
-        added++;
+        result.added++;
       } catch (e) {
-        // Number dropped mid-run (or WhatsApp rejected this specific add) — stop
-        // here instead of continuing to advance idx past contacts that were
-        // never actually added.
+        // Number dropped mid-run, or WhatsApp rejected this specific add (not
+        // an admin, target's privacy settings, etc.) — stop here instead of
+        // continuing to advance idx past contacts that were never actually
+        // added, and surface exactly why.
+        result.error = `${contact.name} (${contact.phone}): ${e.message}`;
         console.error(`[MemberQueue ${q.id}] failed to add ${jid}: ${e.message}`);
         break;
       }
@@ -333,13 +339,22 @@ async function runMemberQueue(q) {
     idx++;
   }
 
-  const allDone = idx >= contactIds.length;
-  const nextDate = new Date();
-  nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
-  db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
-    .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
+  db.prepare('UPDATE group_member_queues SET last_error = ?, last_run_added = ? WHERE id = ?')
+    .run(result.error, result.added, q.id);
 
-  console.log(`[MemberQueue ${q.id}] "${q.name}" added ${added} members — ${allDone ? 'completed' : 'active'}`);
+  // Only push the schedule forward if this run actually made progress —
+  // a total failure (e.g. every add rejected) should be retryable right away
+  // via "Run Now" instead of waiting frequency_days for the next cron tick.
+  if (idx > startIdx) {
+    const allDone = idx >= contactIds.length;
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + (q.frequency_days || 1));
+    db.prepare('UPDATE group_member_queues SET current_index = ?, next_send_at = ?, status = ? WHERE id = ?')
+      .run(allDone ? 0 : idx, nextDate.toISOString().slice(0, 10), allDone ? 'completed' : 'active', q.id);
+  }
+
+  console.log(`[MemberQueue ${q.id}] "${q.name}" added ${result.added}/${result.attempted} attempted${result.error ? ` — error: ${result.error}` : ''}`);
+  return result;
 }
 
 // Used by the "Run Now" route to avoid racing a concurrent scheduler tick
@@ -353,7 +368,7 @@ async function runMemberQueueNow(q) {
   if (queuesInProgress.has(lockKey)) throw new Error('This schedule is already running');
   queuesInProgress.add(lockKey);
   try {
-    await runMemberQueue(q);
+    return await runMemberQueue(q);
   } finally {
     queuesInProgress.delete(lockKey);
   }

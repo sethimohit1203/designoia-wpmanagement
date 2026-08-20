@@ -174,8 +174,13 @@ export default function AddMembers() {
                   <div className="text-sm text-gray-500 truncate">🎯 {q.group_id}</div>
                   <div className="text-xs text-gray-400 flex flex-wrap gap-x-3">
                     <span>📅 Next: <span className="font-medium text-gray-600">{q.next_send_at || '—'}</span></span>
-                    <span>🕓 Last run: <span className="font-medium text-gray-600">{formatLastRun(q.last_run_at)}</span></span>
+                    <span>🕓 Last run: <span className="font-medium text-gray-600">{formatLastRun(q.last_run_at)}</span>{q.last_run_at && !q.in_progress ? ` (${q.last_run_added || 0} actually added)` : ''}</span>
                   </div>
+                  {!q.in_progress && q.last_error && (
+                    <div className="text-xs bg-red-50 text-red-700 border border-red-100 rounded-lg px-2 py-1.5">
+                      ⚠️ Last attempt failed: {q.last_error}
+                    </div>
+                  )}
                   {/* Progress */}
                   <div>
                     <div className="flex justify-between text-[10px] text-gray-400 mb-1">

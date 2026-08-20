@@ -38,7 +38,8 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/run-now', async (req, res) => {
   const q = db.prepare('SELECT * FROM group_member_queues WHERE id = ?').get(req.params.id);
   if (!q) return res.status(404).json({ error: 'Not found' });
-  res.json({ ok: true, message: `Running — will add up to ${q.members_per_day} members with ${q.delay_seconds ?? 10}s delay between each` });
+  if (isQueueInProgress(q.id)) return res.status(409).json({ error: 'This schedule is already running' });
+  res.json({ ok: true, message: `Running — will attempt up to ${q.members_per_day} members with ${q.delay_seconds ?? 10}s delay between each` });
   runMemberQueueNow(q).catch((e) => console.error(`[MemberQueue ${q.id}] run-now failed:`, e.message));
 });
 

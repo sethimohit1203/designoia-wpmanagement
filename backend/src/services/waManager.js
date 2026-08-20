@@ -388,10 +388,29 @@ class WAManager extends EventEmitter {
     return groups;
   }
 
+  // WhatsApp reasons for rejecting a direct group add, keyed by the status
+  // code Baileys returns per participant (it does NOT throw on these —
+  // the call "succeeds" at the protocol level even though nobody was added).
+  static ADD_FAILURE_REASONS = {
+    403: 'not authorized — this number must be a group admin to add members',
+    408: "target's privacy settings block being added directly (they must join via invite link)",
+    409: 'already a participant',
+    500: 'WhatsApp rejected the request (unknown error)',
+  };
+
   async addGroupMembers(numberId, groupId, participantJids) {
     const sock = this.getClient(numberId);
     if (!sock) throw new Error('Number not connected');
     const result = await sock.groupParticipantsUpdate(groupId, participantJids, 'add');
+    const failed = result.filter((r) => String(r.status) !== '200');
+    if (failed.length) {
+      const reasons = failed
+        .map((r) => WAManager.ADD_FAILURE_REASONS[r.status] || `status ${r.status}`)
+        .join('; ');
+      const err = new Error(reasons);
+      err.results = result;
+      throw err;
+    }
     return result;
   }
 

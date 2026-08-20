@@ -192,6 +192,12 @@ if (!memberQueueCols.includes('delay_seconds')) {
 if (!memberQueueCols.includes('last_run_at')) {
   db.exec('ALTER TABLE group_member_queues ADD COLUMN last_run_at TEXT');
 }
+if (!memberQueueCols.includes('last_error')) {
+  db.exec('ALTER TABLE group_member_queues ADD COLUMN last_error TEXT');
+}
+if (!memberQueueCols.includes('last_run_added')) {
+  db.exec('ALTER TABLE group_member_queues ADD COLUMN last_run_added INTEGER DEFAULT 0');
+}
 
 const sheetsConfigCols = db.prepare("PRAGMA table_info(sheets_config)").all().map((c) => c.name);
 if (!sheetsConfigCols.includes('column_map')) {
