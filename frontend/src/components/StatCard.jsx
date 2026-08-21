@@ -7,9 +7,9 @@ export default function StatCard({ icon, iconBg = 'bg-accent/10', iconColor = 't
         {icon}
       </div>
       <div className="min-w-0">
-        <div className="text-xs text-gray-500">{label}</div>
-        <div className="text-2xl font-bold text-gray-900 leading-tight">{value}</div>
-        {delta && <div className="text-xs text-wagreen font-medium mt-0.5">{delta}</div>}
+        <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
+        <div className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">{value}</div>
+        {delta && <div className="text-xs text-emerald-650 dark:text-emerald-400 font-semibold mt-0.5">{delta}</div>}
       </div>
     </div>
   );

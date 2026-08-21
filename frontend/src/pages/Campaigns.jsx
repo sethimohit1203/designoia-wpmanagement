@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -16,7 +17,6 @@ export default function Campaigns() {
     message: '',
     scheduled_at: '',
     recurrence: 'none',
-    delay_seconds: 8,
   });
 
   // Local/UI states for options and layout matching the design reference
@@ -26,6 +26,7 @@ export default function Campaigns() {
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'scheduled' | 'sent' | 'failed' | 'cancelled'
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [editingId, setEditingId] = useState(null);
 
   // Advanced toggles matching screenshot
   const [randomDelay, setRandomDelay] = useState(true);
@@ -70,11 +71,30 @@ export default function Campaigns() {
         message: '',
         scheduled_at: '',
         recurrence: 'none',
-        delay_seconds: 8,
       });
       setEndDate('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Failed to schedule campaign'),
+  });
+
+  const saveEdit = useMutation({
+    mutationFn: ({ id, ...data }) => api.put(`/campaigns/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      toast.success('Campaign updated successfully');
+      setForm({
+        name: '',
+        group_name: 'All',
+        template_id: '',
+        number_id: '',
+        message: '',
+        scheduled_at: '',
+        recurrence: 'none',
+      });
+      setEditingId(null);
+      setEndDate('');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Failed to update campaign'),
   });
 
   const cancel = useMutation({
@@ -102,6 +122,29 @@ export default function Campaigns() {
 
   const insertVariable = (variable) => {
     setForm((f) => ({ ...f, message: f.message + ` {${variable}}` }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingId) {
+      saveEdit.mutate({ id: editingId, ...form });
+    } else {
+      create.mutate();
+    }
+  };
+
+  const startEdit = (c) => {
+    setForm({
+      name: c.name,
+      group_name: c.group_name || 'All',
+      template_id: c.template_id || '',
+      number_id: c.number_id || '',
+      message: c.message || '',
+      scheduled_at: c.scheduled_at || '',
+      recurrence: c.recurrence || 'none',
+    });
+    setEditingId(c.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Helper stats
@@ -151,7 +194,7 @@ export default function Campaigns() {
     scheduled: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-950/50',
     sent: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-950/50',
     active: 'bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 border border-teal-100 dark:border-teal-950/50',
-    failed: 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-950/50',
+    failed: 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-450 border border-rose-100 dark:border-rose-950/50',
     cancelled: 'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800',
   };
 
@@ -202,9 +245,11 @@ export default function Campaigns() {
           
           {/* Create Campaign Scheduler Form Card */}
           <div className="card">
-            <h2 className="text-base font-bold text-slate-800 dark:text-white mb-4">Create Campaign</h2>
+            <h2 className="text-base font-bold text-slate-800 dark:text-white mb-4">
+              {editingId ? 'Edit Campaign' : 'Create Campaign'}
+            </h2>
             
-            <form onSubmit={(e) => { e.preventDefault(); create.mutate(); }} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               
               {/* Form Grid (Campaign Name, Select Contacts, Template, Sender) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -230,13 +275,13 @@ export default function Campaigns() {
                       <option value="All">All Contacts</option>
                       {groups.map((g) => <option key={g.group_name} value={g.group_name}>{g.group_name}</option>)}
                     </select>
-                    <button
-                      type="button"
-                      className="p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all border border-indigo-100 dark:border-indigo-900/20 active:scale-95"
+                    <Link
+                      to="/contacts"
+                      className="p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all border border-indigo-100 dark:border-indigo-900/20 active:scale-95 flex items-center justify-center"
                       title="Manage Groups"
                     >
                       <Icons.PlusIcon className="w-5 h-5" />
-                    </button>
+                    </Link>
                   </div>
                 </div>
 
@@ -303,19 +348,19 @@ export default function Campaigns() {
                   <div className="relative">
                     <input
                       type="datetime-local"
-                      className="input pl-10"
+                      className="input pl-10 text-slate-700 dark:text-slate-200"
                       value={form.scheduled_at}
                       onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })}
                       required
                     />
-                    <Icons.CalendarIcon className="absolute left-3.5 top-3.5 w-4.5 h-4.5 text-slate-400 pointer-events-none" />
+                    <Icons.CalendarIcon className="absolute left-3.5 top-3 w-5 h-5 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Recurrence</label>
                   <select
-                    className="input"
+                    className="input text-slate-700 dark:text-slate-200"
                     value={form.recurrence}
                     onChange={(e) => setForm({ ...form, recurrence: e.target.value })}
                   >
@@ -331,11 +376,11 @@ export default function Campaigns() {
                   <div className="relative">
                     <input
                       type="date"
-                      className="input pl-10"
+                      className="input pl-10 text-slate-700 dark:text-slate-200"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
                     />
-                    <Icons.CalendarIcon className="absolute left-3.5 top-3.5 w-4.5 h-4.5 text-slate-400 pointer-events-none" />
+                    <Icons.CalendarIcon className="absolute left-3.5 top-3 w-5 h-5 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
               </div>
@@ -367,23 +412,6 @@ export default function Campaigns() {
                         </label>
                       </div>
 
-                      {randomDelay && (
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">
-                            Delay between contacts: {form.delay_seconds}s
-                          </label>
-                          <input
-                            type="range"
-                            min={3}
-                            max={60}
-                            value={form.delay_seconds}
-                            onChange={(e) => setForm({ ...form, delay_seconds: Number(e.target.value) })}
-                            className="w-full"
-                          />
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">Higher = safer, especially for large lists.</div>
-                        </div>
-                      )}
-
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-xs font-bold text-slate-800 dark:text-white">Smart Timing</div>
@@ -409,9 +437,9 @@ export default function Campaigns() {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Time Zone</label>
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1 uppercase">Time Zone</label>
                         <select
-                          className="input !py-2"
+                          className="input !py-2 text-slate-700 dark:text-slate-200"
                           value={timezone}
                           onChange={(e) => setTimezone(e.target.value)}
                         >
@@ -425,15 +453,42 @@ export default function Campaigns() {
                 )}
               </div>
 
-              {/* Schedule Campaign Submit Button */}
-              <button
-                type="submit"
-                className="w-full btn-primary py-3 rounded-xl flex items-center justify-center gap-2"
-                disabled={!form.name || !form.scheduled_at || create.isPending}
-              >
-                <Icons.CalendarIcon className="w-5 h-5 text-white" />
-                <span>{create.isPending ? 'Scheduling...' : 'Schedule Campaign'}</span>
-              </button>
+              {/* Action Buttons (Submit/Cancel edit) */}
+              <div className="flex gap-3">
+                {editingId && (
+                  <button
+                    type="button"
+                    className="btn-secondary py-3 rounded-xl flex-1 font-bold"
+                    onClick={() => {
+                      setForm({
+                        name: '',
+                        group_name: 'All',
+                        template_id: '',
+                        number_id: '',
+                        message: '',
+                        scheduled_at: '',
+                        recurrence: 'none',
+                      });
+                      setEditingId(null);
+                      setEndDate('');
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="btn-primary py-3 rounded-xl flex-[2] flex items-center justify-center gap-2"
+                  disabled={!form.name || !form.scheduled_at || create.isPending || saveEdit.isPending}
+                >
+                  <Icons.CalendarIcon className="w-5 h-5 text-white" />
+                  <span>
+                    {editingId
+                      ? (saveEdit.isPending ? 'Saving...' : 'Save Changes')
+                      : (create.isPending ? 'Scheduling...' : 'Schedule Campaign')}
+                  </span>
+                </button>
+              </div>
 
             </form>
           </div>
@@ -530,6 +585,15 @@ export default function Campaigns() {
                         <div className="flex gap-2 justify-end">
                           {c.status === 'scheduled' && (
                             <button
+                              className="p-1.5 rounded-lg border border-indigo-100 dark:border-indigo-950/40 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-all active:scale-95"
+                              title="Edit Campaign"
+                              onClick={() => startEdit(c)}
+                            >
+                              <Icons.EditIcon className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {c.status === 'scheduled' && (
+                            <button
                               className="p-1.5 rounded-lg border border-amber-100 dark:border-amber-950/40 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all active:scale-95"
                               title="Cancel Schedule"
                               onClick={() => cancel.mutate(c.id)}
@@ -550,6 +614,7 @@ export default function Campaigns() {
                                 message: c.message || '',
                                 recurrence: c.recurrence || 'none',
                               });
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
                               toast.success('Campaign details copied to form');
                             }}
                           >
@@ -645,7 +710,7 @@ export default function Campaigns() {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Channels Included</h3>
-              <button className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-lg border border-indigo-100 dark:border-indigo-900/20">Manage</button>
+              <Link to="/numbers" className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-lg border border-indigo-100 dark:border-indigo-900/20">Manage</Link>
             </div>
 
             <div className="space-y-3">
@@ -780,7 +845,7 @@ export default function Campaigns() {
               {/* Stat 4: Failed */}
               <div className="p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <div className="w-6 h-6 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-500 dark:text-rose-400 flex items-center justify-center">
+                  <div className="w-6 h-6 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-500 dark:text-rose-450 flex items-center justify-center">
                     <Icons.DeleteIcon className="w-3.5 h-3.5" />
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Failed</span>
@@ -795,7 +860,7 @@ export default function Campaigns() {
             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">Quick Actions</h3>
             
             <div className="space-y-2">
-              <button className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
+              <Link to="/templates" className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 flex items-center justify-center">
                   <Icons.TemplatesIcon className="w-4 h-4" />
                 </div>
@@ -803,9 +868,9 @@ export default function Campaigns() {
                   <div className="text-xs font-bold text-slate-850 dark:text-white">Create Template</div>
                   <div className="text-[9px] text-slate-400 dark:text-slate-500">Save frequently used messages</div>
                 </div>
-              </button>
+              </Link>
 
-              <button className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
+              <Link to="/contacts" className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-500 dark:text-purple-400 flex items-center justify-center">
                   <Icons.ContactsIcon className="w-4 h-4" />
                 </div>
@@ -813,9 +878,9 @@ export default function Campaigns() {
                   <div className="text-xs font-bold text-slate-850 dark:text-white">Import Contacts</div>
                   <div className="text-[9px] text-slate-400 dark:text-slate-500">Import from CSV or Excel</div>
                 </div>
-              </button>
+              </Link>
 
-              <button className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
+              <Link to="/analytics" className="w-full p-3 bg-slate-50/50 dark:bg-[#171926]/40 rounded-xl border border-gray-100/50 dark:border-gray-800/30 text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors flex items-center gap-3">
                 <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 flex items-center justify-center">
                   <Icons.AnalyticsIcon className="w-4 h-4" />
                 </div>
@@ -823,7 +888,7 @@ export default function Campaigns() {
                   <div className="text-xs font-bold text-slate-850 dark:text-white">View Reports</div>
                   <div className="text-[9px] text-slate-400 dark:text-slate-500">Detailed campaign analytics</div>
                 </div>
-              </button>
+              </Link>
             </div>
           </div>
 

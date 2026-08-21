@@ -172,7 +172,7 @@ export default function Layout() {
             {/* Search Box */}
             <div className="relative hidden md:block max-w-xs w-full">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                <Icons.SearchIcon className="h-4.5 w-4.5 text-slate-400 dark:text-slate-500" />
+                <Icons.SearchIcon className="h-5 w-5 text-slate-400 dark:text-slate-500" />
               </span>
               <input
                 type="text"

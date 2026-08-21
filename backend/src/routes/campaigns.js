@@ -20,6 +20,16 @@ router.post('/:id/cancel', (req, res) => {
   res.json({ ok: true });
 });
 
+router.put('/:id', (req, res) => {
+  const { name, group_name = 'All', template_id, number_id, message, scheduled_at, recurrence = 'none', delay_seconds = 8 } = req.body;
+  if (!name || !scheduled_at) return res.status(400).json({ error: 'name and scheduled_at required' });
+  const result = db.prepare(
+    'UPDATE campaigns SET name = ?, group_name = ?, template_id = ?, number_id = ?, message = ?, scheduled_at = ?, recurrence = ?, delay_seconds = ? WHERE id = ?'
+  ).run(name, group_name, template_id || null, number_id || null, message, scheduled_at, recurrence, delay_seconds, req.params.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'Campaign not found' });
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM campaigns WHERE id = ?').run(req.params.id);
   res.json({ ok: true });

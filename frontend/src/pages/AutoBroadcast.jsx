@@ -241,7 +241,7 @@ export default function AutoBroadcast() {
           className="btn-primary flex items-center gap-1.5 text-xs font-semibold py-2.5 px-4"
           onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true); }}
         >
-          <Icons.PlusIcon className="w-4.5 h-4.5" />
+          <Icons.PlusIcon className="w-5 h-5" />
           <span>New Schedule</span>
         </button>
       </div>
