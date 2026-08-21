@@ -24,6 +24,23 @@ function applyVariables(template, contact) {
     .replace(/\{vehicle\}/g, contact.vehicle || '');
 }
 
+// Anti-spam: WhatsApp's abuse detection flags byte-identical text sent to many
+// numbers in a row. Slips 1-2 invisible zero-width characters in at random word
+// boundaries — invisible to the reader, but breaks exact-duplicate detection.
+const ZERO_WIDTH_CHARS = ['​', '‌']; // zero-width space / non-joiner — invisible in WhatsApp
+function addRandomVariation(text) {
+  if (!text) return text;
+  const words = text.split(' ');
+  if (words.length < 2) return text + ZERO_WIDTH_CHARS[0];
+  const insertions = 1 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < insertions; i++) {
+    const pos = 1 + Math.floor(Math.random() * (words.length - 1));
+    const ch = ZERO_WIDTH_CHARS[Math.floor(Math.random() * ZERO_WIDTH_CHARS.length)];
+    words[pos] = ch + words[pos];
+  }
+  return words.join(' ');
+}
+
 async function runCampaign(campaign) {
   db.prepare("UPDATE campaigns SET status = 'sending' WHERE id = ?").run(campaign.id);
   const contacts = campaign.group_name && campaign.group_name !== 'All'
@@ -31,6 +48,7 @@ async function runCampaign(campaign) {
     : db.prepare("SELECT * FROM contacts WHERE status = 'active'").all();
 
   const autoRotate = getSetting('auto_rotate', 'true') === 'true';
+  const randomVariation = getSetting('random_variation', 'true') === 'true';
   let numberId = campaign.number_id;
   let sentCount = 0;
   let failedCount = 0;
@@ -45,7 +63,8 @@ async function runCampaign(campaign) {
       }
       useNumberId = next.id;
     }
-    const body = applyVariables(campaign.message || '', contact);
+    let body = applyVariables(campaign.message || '', contact);
+    if (randomVariation) body = addRandomVariation(body);
     try {
       await wa.sendMessage(useNumberId, contact.phone, body, campaign.media_path || null);
       db.prepare(`INSERT INTO messages (campaign_id, number_id, contact_id, to_phone, body, status, sent_at) VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)`)

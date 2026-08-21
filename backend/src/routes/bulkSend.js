@@ -13,6 +13,23 @@ function applyVariables(template, contact) {
     .replace(/\{vehicle\}/g, contact.vehicle || '');
 }
 
+// Anti-spam: WhatsApp's abuse detection flags byte-identical text sent to many
+// numbers in a row. Slips 1-2 invisible zero-width characters in at random word
+// boundaries — invisible to the reader, but breaks exact-duplicate detection.
+const ZERO_WIDTH_CHARS = ['​', '‌'];
+function addRandomVariation(text) {
+  if (!text) return text;
+  const words = text.split(' ');
+  if (words.length < 2) return text + ZERO_WIDTH_CHARS[0];
+  const insertions = 1 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < insertions; i++) {
+    const pos = 1 + Math.floor(Math.random() * (words.length - 1));
+    const ch = ZERO_WIDTH_CHARS[Math.floor(Math.random() * ZERO_WIDTH_CHARS.length)];
+    words[pos] = ch + words[pos];
+  }
+  return words.join(' ');
+}
+
 // Server-Sent Events progress stream for a live bulk send
 router.post('/send', upload.single('media'), async (req, res) => {
   const { group_name = 'All', message, number_id, delay_seconds = 8, campaign_name = 'Quick Send' } = req.body;
@@ -35,10 +52,12 @@ router.post('/send', upload.single('media'), async (req, res) => {
 
   let sent = 0, failed = 0;
   const total = contacts.length;
+  const randomVariation = db.prepare("SELECT value FROM settings WHERE key = 'random_variation'").get()?.value !== 'false';
 
   for (const contact of contacts) {
     const useNumberId = number_id ? Number(number_id) : wa.pickNextAvailableNumber()?.id;
-    const body = applyVariables(message, contact);
+    let body = applyVariables(message, contact);
+    if (randomVariation) body = addRandomVariation(body);
     try {
       if (!useNumberId) throw new Error('No connected number available');
       await wa.sendMessage(useNumberId, contact.phone, body, req.file?.path || null);
