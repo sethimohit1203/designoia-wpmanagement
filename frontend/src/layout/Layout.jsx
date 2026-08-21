@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import { navItems } from './navItems';
@@ -30,6 +30,26 @@ export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const darkMode = theme === 'dark';
+
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [hasNotifications, setHasNotifications] = useState(true);
+
+  const notificationsRef = useRef(null);
+  const profileRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setShowProfileDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const { data: numbers = [] } = useQuery({
     queryKey: ['numbers'],
@@ -191,45 +211,97 @@ export default function Layout() {
             <div className="flex items-center bg-slate-50 dark:bg-[#151824] p-0.5 rounded-xl border border-gray-100/80 dark:border-gray-800/50">
               <button
                 onClick={() => setTheme('light')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  !darkMode
-                    ? 'bg-white dark:bg-slate-700 text-amber-500 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                }`}
+                className="p-1.5 rounded-lg transition-all text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 title="Light Mode"
               >
-                <Icons.SunIcon className="w-4 h-4" />
+                <Icons.SunIcon className={`w-4 h-4 ${!darkMode ? 'text-amber-500 fill-amber-500' : ''}`} />
               </button>
               <button
                 onClick={() => setTheme('dark')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  darkMode
-                    ? 'bg-white dark:bg-slate-700 text-indigo-400 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                }`}
+                className="p-1.5 rounded-lg transition-all text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 title="Dark Mode"
               >
-                <Icons.MoonIcon className="w-4 h-4" />
+                <Icons.MoonIcon className={`w-4 h-4 ${darkMode ? 'text-indigo-400 fill-indigo-400' : ''}`} />
               </button>
             </div>
 
-            {/* Notification Bell */}
-            <div className="relative">
-              <button className="p-2 rounded-xl bg-slate-50 dark:bg-[#151824] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 border border-gray-100/80 dark:border-gray-800/50 relative">
+            {/* Notification Bell with Dropdown */}
+            <div className="relative" ref={notificationsRef}>
+              <button
+                onClick={() => {
+                  setShowNotifications(!showNotifications);
+                  setHasNotifications(false);
+                }}
+                className="p-2 rounded-xl bg-slate-50 dark:bg-[#151824] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 border border-gray-100/80 dark:border-gray-800/50 relative focus:outline-none"
+              >
                 <Icons.BellIcon className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#0c0e17]" />
+                {hasNotifications && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#0c0e17]" />
+                )}
               </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 mt-2.5 w-80 bg-white dark:bg-[#151824] rounded-2xl shadow-xl border border-slate-200/60 dark:border-slate-800 py-3 z-50">
+                  <div className="px-4 pb-2 border-b border-gray-100 dark:border-gray-800/40 flex justify-between items-center">
+                    <span className="font-extrabold text-slate-800 dark:text-white text-xs">Notifications</span>
+                    <button
+                      onClick={() => setHasNotifications(false)}
+                      className="text-[10px] text-indigo-500 hover:underline font-bold"
+                    >
+                      Mark all as read
+                    </button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto divide-y divide-gray-50 dark:divide-gray-800/40 mt-1">
+                    <div className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors text-left">
+                      <div className="text-[11px] font-bold text-slate-850 dark:text-slate-200 leading-snug">Campaign 'Diwali Promo' scheduled successfully.</div>
+                      <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">10 minutes ago</div>
+                    </div>
+                    <div className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors text-left">
+                      <div className="text-[11px] font-bold text-slate-850 dark:text-slate-200 leading-snug">WhatsApp number '+91 98765 43210' is active.</div>
+                      <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">1 hour ago</div>
+                    </div>
+                    <div className="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors text-left">
+                      <div className="text-[11px] font-bold text-slate-850 dark:text-slate-200 leading-snug">Auto Broadcast queue processed 12 messages.</div>
+                      <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">Yesterday</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Profile Avatar */}
-            <div className="flex items-center gap-3.5 border-l border-gray-100 dark:border-gray-800/60 pl-4">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-indigo-500/10">
-                C
-              </div>
-              <div className="hidden sm:block text-left">
-                <div className="text-xs font-bold text-slate-800 dark:text-white leading-tight">cliki</div>
-                <div className="text-[10px] text-slate-400 dark:text-slate-500">Admin</div>
-              </div>
+            {/* Profile Avatar with Dropdown */}
+            <div className="relative" ref={profileRef}>
+              <button
+                onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                className="flex items-center gap-3.5 border-l border-gray-100 dark:border-gray-800/60 pl-4 text-left focus:outline-none select-none cursor-pointer"
+              >
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-500 text-white font-bold flex items-center justify-center shadow-md shadow-indigo-500/10">
+                  C
+                </div>
+                <div className="hidden sm:block">
+                  <div className="text-xs font-bold text-slate-800 dark:text-white leading-tight flex items-center gap-1">
+                    <span>cliki</span>
+                    <Icons.ChevronDownIcon className={`w-3.5 h-3.5 text-slate-450 transition-transform ${showProfileDropdown ? 'rotate-180' : ''}`} />
+                  </div>
+                  <div className="text-[10px] text-slate-400 dark:text-slate-500">Admin</div>
+                </div>
+              </button>
+
+              {showProfileDropdown && (
+                <div className="absolute right-0 mt-2.5 w-48 bg-white dark:bg-[#151824] rounded-2xl shadow-xl border border-slate-200/60 dark:border-slate-800 py-2 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800/40">
+                    <div className="text-xs font-bold text-slate-800 dark:text-white">cliki</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500">admin@designoia.com</div>
+                  </div>
+                  <button
+                    onClick={logout}
+                    className="w-full text-left px-4 py-2.5 text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 font-bold transition-colors flex items-center gap-2"
+                  >
+                    <Icons.LogoutIcon className="w-4 h-4 text-rose-500" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
