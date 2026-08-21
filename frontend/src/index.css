@@ -3,27 +3,50 @@
 @tailwind utilities;
 
 body {
-  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Plus Jakarta Sans', -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  @apply transition-colors duration-200;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 .chip {
-  @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold;
+  @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold transition-all;
 }
 
 .card {
-  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5;
+  @apply bg-white dark:bg-[#131520] rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] border border-gray-100 dark:border-gray-800/40 p-5 transition-all duration-200;
 }
 
 .btn-primary {
-  @apply bg-accent text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50;
+  @apply bg-accent text-white px-4 py-2.5 rounded-xl font-semibold hover:opacity-95 transition-all disabled:opacity-50 shadow-md shadow-accent/15 hover:shadow-accent/25 active:scale-95;
 }
 
 .btn-secondary {
-  @apply bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-200 transition;
+  @apply bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-4 py-2.5 rounded-xl font-semibold hover:bg-gray-200 dark:hover:bg-gray-700/80 transition-all active:scale-95;
 }
 
 .input {
-  @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent;
+  @apply w-full border border-gray-200 dark:border-gray-800 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent bg-white dark:bg-[#171926] text-gray-800 dark:text-gray-100 transition-all placeholder-gray-400 dark:placeholder-gray-500;
 }
 
 /* Dark mode: this app's pages were built with plain Tailwind gray/white
@@ -51,3 +74,34 @@ body {
 .dark .btn-secondary { background-color: #232733; color: #e5e7eb; }
 .dark .btn-secondary:hover { background-color: #2a2e3a; }
 .dark .shadow-sm { box-shadow: none; }
+
+/* Native browser controls (date/time pickers, checkboxes, scrollbars the
+   webkit rules above don't cover) don't respond to CSS color overrides —
+   only to color-scheme, which tells the browser itself to render its own
+   chrome (calendar icon, picker popup, digit color) in dark colors instead
+   of defaulting to black-on-dark and disappearing. */
+.dark, .dark input, .dark select, .dark textarea {
+  color-scheme: dark;
+}
+
+/* Status/warning pastel chips (bg-*-50/100 + text-*-600/700) were designed
+   light-only — on a dark page they read as glaring light rectangles, or in
+   some cases near-invisible text. Re-tint them to a translucent dark-mode
+   equivalent that keeps each color's meaning (green=ok, amber=warn, etc.)
+   without the light-mode brightness. */
+.dark .bg-blue-50 { background-color: rgba(59,130,246,0.15) !important; }
+.dark .bg-blue-100 { background-color: rgba(59,130,246,0.22) !important; }
+.dark .bg-green-50 { background-color: rgba(34,197,94,0.15) !important; }
+.dark .bg-green-100 { background-color: rgba(34,197,94,0.22) !important; }
+.dark .bg-amber-50 { background-color: rgba(245,158,11,0.15) !important; }
+.dark .bg-amber-100 { background-color: rgba(245,158,11,0.22) !important; }
+.dark .bg-red-50 { background-color: rgba(239,68,68,0.15) !important; }
+.dark .bg-red-100 { background-color: rgba(239,68,68,0.22) !important; }
+.dark .bg-indigo-50 { background-color: rgba(99,102,241,0.15) !important; }
+.dark .text-blue-600, .dark .text-blue-700 { color: #93c5fd !important; }
+.dark .text-green-600, .dark .text-green-700, .dark .text-wagreen { color: #86efac !important; }
+.dark .text-amber-600, .dark .text-amber-700 { color: #fcd34d !important; }
+.dark .text-red-500, .dark .text-red-600, .dark .text-red-700 { color: #fca5a5 !important; }
+.dark .border-amber-200 { border-color: rgba(245,158,11,0.35) !important; }
+.dark .border-red-100 { border-color: rgba(239,68,68,0.3) !important; }
+.dark .border-blue-100 { border-color: rgba(59,130,246,0.3) !important; }
